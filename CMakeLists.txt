@@ -3,6 +3,14 @@ cmake_minimum_required(VERSION 3.16)
 # =============================================================================
 # 多 RTOS 可扩展工程：应用层只依赖 OSAL，RT-Thread / Zephyr / FreeRTOS 为可插拔后端。
 # 构建时通过 -DRTOS=rt-thread|zephyr|freertos 选择后端。
+#
+# ⚠️ 装配模式（重要，避免误读本文件）：
+#   本 CMakeLists.txt 只负责「裸 CMake 类后端」的装配 —— 即 RT-Thread（未来 FreeRTOS 同此），
+#   路径为 add_subdirectory(...) → add_executable(stm32f103.elf)，链接由本文件拥有。
+#   **Zephyr 不走这个文件**：Zephyr 是独立构建宿主（内核/驱动/设备树/链接脚本/最终 elf 全归它），
+#   它被下方 RTOS=zephyr 分支主动挡掉（FATAL_ERROR），改由独立应用工程
+#   `applications/zephyr/CMakeLists.txt` 装配（`cmake -S applications/zephyr`）。
+#   共用点只在「源码」：两侧都引用同一份 applications/main.c、modules/、drivers/gpio、osal/。
 # =============================================================================
 
 project(stm32f103 LANGUAGES C ASM)
@@ -60,7 +68,13 @@ if(RTOS STREQUAL "rt-thread")
     add_subdirectory(rtos/rt-thread
                      ${CMAKE_BINARY_DIR}/rtos/rt-thread)
 elseif(RTOS STREQUAL "zephyr")
-    message(FATAL_ERROR "Zephyr 后端尚未接入，请先按 README 完成 git submodule 与 CMake 适配")
+    # Zephyr 与 RT-Thread 构建方式不同：Zephyr 是构建系统宿主（内核/驱动/设备树/链接脚本全接管），
+    # 无法像 RT-Thread 那样在本 CMakeLists 中 add_subdirectory 集成。Zephyr 编译请改走
+    # 独立应用工程 applications/zephyr/（含 OSAL→Zephyr 适配 osal/port/zephyr/）：
+    #   ./tools/devops.sh build --rtos zephyr          # (build-zephyr.sh 按需拉取模块 + 编译)
+    # 手工方式见 applications/zephyr/README.md。
+    message(FATAL_ERROR "RTOS=zephyr 请改用 ./tools/devops.sh build --rtos zephyr "
+        "（Zephyr 是独立构建宿主，应用在 applications/zephyr/，不在本 CMakeLists 编译）")
 elseif(RTOS STREQUAL "freertos")
     message(FATAL_ERROR "FreeRTOS 后端尚未接入，请先按 README 完成 git submodule 与 CMake 适配")
 else()
@@ -77,6 +91,12 @@ add_subdirectory(drivers)
 
 # -----------------------------------------------------------------------------
 # 应用层
+# -----------------------------------------------------------------------------
+# [仅裸 CMake 模式（RT-Thread / 未来 FreeRTOS）] 应用层装配。
+# 应用层源码：applications/main.c + osal + modules + drivers。
+# ⚠️ 这段 add_subdirectory(...) + add_executable(stm32f103.elf)
+#    只会在 RT-Thread 等裸 CMake 后端的编译里执行；RTOS=zephyr 时上面分支已终止，
+#    由独立工程 applications/zephyr/ 另行装配同一份源码，不经过这里。
 # -----------------------------------------------------------------------------
 add_subdirectory(osal)
 add_subdirectory(modules)

@@ -20,10 +20,18 @@ RUN apt-get update \
         git \
         cmake \
         ninja-build \
+        # Zephyr 构建硬性依赖：device tree compiler（解析 dts/dtsi）
+        device-tree-compiler \
         gcc \
         libc6-dev \
         gcc-arm-none-eabi \
         libnewlib-arm-none-eabi \
+        # --- Zephyr 依赖（--rtos zephyr 用；venv 里按 Zephyr
+        #     scripts/requirements-base.txt 装 python 构建依赖） ---
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # 验证关键工具就位

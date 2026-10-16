@@ -2,14 +2,17 @@
 # devops.sh - 统一的开发/运维入口（构建 / 烧录 / 测试）
 #
 # 构建与测试一律在**同一个 Docker 镜像**内完成，宿主机无需安装任何工具链。
-# 产物按目标板区分：默认输出到 build/<BOARD>/，多板互不干扰。
+# 产物按目标板区分并进一步按 RTOS 拆分：`build/<BOARD>/rt-thread/`（RT-Thread 固件）、
+# `build/<BOARD>/zephyr/`（Zephyr 固件）；host 单测统一放 `build/<BOARD>/rt-thread/tests`，互不干扰。
 #
 # 用法:
 #   ./tools/devops.sh build [选项]        Docker 交叉编译固件（唯一构建方式）
 #       --board <板名>        目标板（默认 stm32f103，可简写 f103）
 #       --rtos <内核>         RTOS 后端：rt-thread/zephyr/freertos（默认 rt-thread）
 #       --gpio-backend <名>   GPIO 实现后端（默认 stm32f1）
+#       --zephyr-board <名>   --rtos zephyr 对应 Zephyr 官方板（默认 stm32f103_mini）
 #       --host|--test|-t      额外编译 host 单测程序（宿主 gcc；仅编译，不运行）
+#       --clean|-c           build 前先清理本次固件构建目录（干净重建）
 #   ./tools/devops.sh test                只**运行**已编译好的 host 单测（编译请先 build --host）
 #   ./tools/devops.sh flash               ST-Link 烧录（宿主机需 openocd）
 #   ./tools/devops.sh help                显示本帮助
@@ -24,6 +27,8 @@ RTOS="${RTOS:-rt-thread}"
 GEN="${GEN:-Ninja}"
 TOOLCHAIN="${TOOLCHAIN:-$ROOT/cmake/toolchain-arm-none-eabi.cmake}"
 GPIO_BACKEND="${GPIO_BACKEND:-stm32f1}"
+# --rtos zephyr 时对应的 Zephyr 官方 board（主机可选择 STM32F103 系开发板）
+ZEPHYR_BOARD="${ZEPHYR_BOARD:-stm32f103_mini}"
 IMG="${IMG:-stm32f103-toolchain:latest}"
 DOCKERFILE="${DOCKERFILE:-$ROOT/docker/Dockerfile}"
 
@@ -44,7 +49,9 @@ usage() {
         --board <板名>        目标板（默认 stm32f103，可简写 f103）
         --rtos <内核>         RTOS 后端：rt-thread / zephyr / freertos（默认 rt-thread）
         --gpio-backend <名>   GPIO 实现后端（默认 stm32f1）
+        --zephyr-board <名>   --rtos zephyr 对应 Zephyr 官方板（默认 stm32f103_mini）
         --host|--test|-t      额外编译 host 单测程序（宿主 gcc；仅编译，不运行）
+        --clean|-c            build 前先清理本次固件构建目录（干净重建；zephyr 保留 .venv-zephyr/external，无需联网重拉模块）
   ./tools/devops.sh test                只**运行**已编译好的 host 单测（编译请先 build --host）
   ./tools/devops.sh flash               ST-Link 烧录（宿主机需 openocd）
   ./tools/devops.sh help                显示本帮助
@@ -86,6 +93,29 @@ do_build() {
   echo "[devops] 目标板 BOARD=$BOARD"
   echo "[devops] 容器内编译固件：RTOS=$RTOS GPIO_BACKEND=$GPIO_BACKEND"
   echo "[devops] 挂载 $ROOT -> $ROOT ，产物目录 $BUILD_DIR"
+  # -- Zephyr 走 Zephyr 自带构建体系（构建宿主是 Zephyr，不走顶层 CMakeLists）--
+  if [ "$RTOS" = "zephyr" ]; then
+    echo "[devops] Zephyr 构建：BOARD（Zephyr 板）=$ZEPHYR_BOARD"
+    docker run --rm \
+        -u "$(id -u):$(id -g)" \
+        -e ZEPHYR_BASE="$ROOT/rtos/zephyr" \
+        -e ZEPHYR_BOARD="$ZEPHYR_BOARD" \
+        -e BUILD_DIR="$BUILD_DIR/zephyr" \
+        -e GEN="$GEN" \
+        -v "$ROOT:$ROOT" \
+        -w "$ROOT" \
+        "$IMG" bash -lc '
+            set -e
+            bash tools/build-zephyr.sh
+          '
+    echo "[devops] 完成（$BOARD / zephyr）。产物目录：$BUILD_DIR/zephyr/zephyr/"
+    echo "        ELF : $BUILD_DIR/zephyr/zephyr/zephyr.elf"
+    echo "        BIN : $BUILD_DIR/zephyr/zephyr/zephyr.bin"
+    echo "        HEX : $BUILD_DIR/zephyr/zephyr/zephyr.hex"
+    echo "        map : $BUILD_DIR/zephyr/zephyr/zephyr.map"
+    return
+  fi
+
   docker run --rm \
       -u "$(id -u):$(id -g)" \
       -e BOARD="$BOARD" \
@@ -100,23 +130,23 @@ do_build() {
       "$IMG" bash -lc '
         set -e
         tools/apply-patches.sh
-        cmake -S . -B "$BUILD_DIR" -G "$GEN" \
+        cmake -S . -B "${BUILD_DIR}/rt-thread" -G "$GEN" \
               -DBOARD="$BOARD" \
               -DRTOS="$RTOS" \
               -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
               -DGPIO_BACKEND="$GPIO_BACKEND"
-        cmake --build "$BUILD_DIR"
+        cmake --build "${BUILD_DIR}/rt-thread"
       '
   echo "[devops] 完成（$BOARD）。产物:"
-  echo "        ELF : $BUILD_DIR/stm32f103（主 ELF，供 GDB）"
-  echo "        BIN : $BUILD_DIR/stm32f103.bin"
-  echo "        HEX : $BUILD_DIR/stm32f103.hex"
+  echo "        ELF : $BUILD_DIR/rt-thread/stm32f103（主 ELF，供 GDB）"
+  echo "        BIN : $BUILD_DIR/rt-thread/stm32f103.bin"
+  echo "        HEX : $BUILD_DIR/rt-thread/stm32f103.hex"
 }
 
 # ---- 编译 host 单测程序（宿主 gcc；仅编译，不运行）----
 do_build_test() {
   ensure_image
-  local tbuild="${TEST_BUILD:-$ROOT/build/$BOARD/tests-gpio}"
+  local tbuild="${TEST_BUILD:-$ROOT/build/$BOARD/rt-thread/tests}"
   echo "[devops] 编译 host 单测程序（宿主 gcc，仅编译，不运行）：$tbuild"
   docker run --rm \
       -u "$(id -u):$(id -g)" \
@@ -134,7 +164,7 @@ do_build_test() {
 
 # ---- 运行 host 单测（只运行 build --host 已编译好的程序，不重新编译）----
 do_test() {
-  local tbuild="${TEST_BUILD:-$ROOT/build/$BOARD/tests-gpio}"
+  local tbuild="${TEST_BUILD:-$ROOT/build/$BOARD/rt-thread/tests}"
   if [ ! -f "$tbuild/test_rtthread_gpio" ]; then
     echo "[devops] 尚未编译 host 单测程序，请先运行：./tools/devops.sh build --host（或 --test）。" >&2
     exit 1
@@ -156,18 +186,22 @@ do_test() {
 # ---- build 子命令：选项解析 + 编译（可 --host/--test 顺带编译 host 单测程序）----
 build() {
   local host=0
-  local b="$BOARD" r="$RTOS" g="$GPIO_BACKEND"
+  local clean=0
+  local b="$BOARD" r="$RTOS" g="$GPIO_BACKEND" zb="$ZEPHYR_BOARD"
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --host|--test|-t) host=1 ;;
+      --clean|-c)       clean=1 ;;
       --board)        b="${2:?--board 需要参数}"; shift ;;
       --board=*)      b="${1#*=}" ;;
       --rtos)         r="${2:?--rtos 需要参数}"; shift ;;
       --rtos=*)       r="${1#*=}" ;;
+      --zephyr-board) zb="${2:?--zephyr-board 需要参数}"; shift ;;
+      --zephyr-board=*) zb="${1#*=}" ;;
       --gpio-backend) g="${2:?--gpio-backend 需要参数}"; shift ;;
       --gpio-backend=*) g="${1#*=}" ;;
       --help|-h)      usage 0 ;;
-      *) echo "[devops] build 未知选项: $1（可用 --board/--rtos/--gpio-backend/--host(--test)）" >&2; usage 1 ;;
+      *) echo "[devops] build 未知选项: $1（可用 --board/--rtos/--zephyr-board/--gpio-backend/--host/--clean）" >&2; usage 1 ;;
     esac
     shift
   done
@@ -175,6 +209,23 @@ build() {
   apply_board "$b"
   RTOS="$r"
   GPIO_BACKEND="$g"
+  ZEPHYR_BOARD="$zb"
+
+  # --clean：干净重建前先清掉本次固件将写入的目录（zephyr / rt-thread 各自独立清理）。
+  #   Zephyr 分支保留**可复用的取回物**：.venv-zephyr（Python 工具链）与 external/
+  #   （已按需拉取的 hal 模块），以跳过联网重装/重拉；只清固件产物、CMake 状态与 .cache。
+  if [ "$clean" = 1 ]; then
+    if [ "$RTOS" = "zephyr" ]; then
+      if [ -d "${BUILD_DIR}/zephyr" ]; then
+        find "${BUILD_DIR}/zephyr" -mindepth 1 -maxdepth 1 \
+            ! -name '.venv-zephyr' ! -name 'external' -exec rm -rf {} +
+      fi
+      echo "[devops] 已清理 ${BUILD_DIR}/zephyr 下固件构建产物（保留 .venv-zephyr 与 external/ 复用，无需联网重拉模块）"
+    else
+      rm -rf "${BUILD_DIR}/rt-thread"
+      echo "[devops] 已清理 ${BUILD_DIR}/rt-thread（含固件与 host 单测；重建自动重新 cmake）"
+    fi
+  fi
 
   do_build
   if [ "$host" = 1 ]; then
@@ -186,7 +237,7 @@ build() {
 
 # ---- 烧录（宿主机 openocd）----
 flash() {
-  local bin="${BIN:-$BUILD_DIR/stm32f103.bin}"
+  local bin="${BIN:-$BUILD_DIR/rt-thread/stm32f103.bin}"
   if [ ! -f "$bin" ]; then
     echo "[devops] 未找到 $bin，请先运行 ./tools/devops.sh build 生成镜像。" >&2
     exit 1

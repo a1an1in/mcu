@@ -23,3 +23,8 @@ Thumbs.db
 
 # ---- 第三方 RTOS submodules 由其自身管理 ----
 # (rtos/ 下各 RTOS 是独立 git 仓库，通过 submodule 管理，不需要在此屏蔽)
+
+# ---- Zephyr 外部依赖（精简模式按需拉取，属外部检出，一律不提交） ----
+/rtos/zephyr/external/
+/rtos/.west/
+# /.venv-zephyr/ 已随 Zephyr 构建移至 build/<board>/zephyr/.venv-zephyr（/build/ 已整体忽略，无需单独规则）
