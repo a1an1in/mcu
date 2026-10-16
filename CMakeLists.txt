@@ -1,0 +1,120 @@
+cmake_minimum_required(VERSION 3.16)
+
+# =============================================================================
+# 多 RTOS 可扩展工程：应用层只依赖 OSAL，RT-Thread / Zephyr / FreeRTOS 为可插拔后端。
+# 构建时通过 -DRTOS=rt-thread|zephyr|freertos 选择后端。
+# =============================================================================
+
+project(stm32f103 LANGUAGES C ASM)
+
+# -----------------------------------------------------------------------------
+# 目标板：bsp/<BOARD>/ 下的板级目录。不同板各自编译、产物互不影响。
+# 当前已实现: stm32f103。新增板子时 bsp/<BOARD>/ 提供 board.c/board.h + 启动/链接脚本，
+# 并在 bsp/CMakeLists.txt 增加对应分支。
+# -----------------------------------------------------------------------------
+set(BOARD "stm32f103" CACHE STRING
+    "目标板（对应 bsp/<BOARD>/ 板级目录），当前支持: stm32f103")
+if(NOT IS_DIRECTORY ${CMAKE_SOURCE_DIR}/bsp/${BOARD})
+    message(FATAL_ERROR
+        "未知板子 BOARD=${BOARD}：当前仅支持 stm32f103（存在 bsp/${BOARD}/）")
+endif()
+
+# -----------------------------------------------------------------------------
+# 可配置项
+# -----------------------------------------------------------------------------
+set(RTOS "rt-thread" CACHE STRING
+    "RTOS 后端，可选: rt-thread / zephyr / freertos")
+
+# 芯片相关文件（启动文件/链接脚本）随板级支持放于 bsp/stm32f103/，
+# 与 RT-Thread 官方“板卡模板自带”的组织方式一致
+
+# ARM 交叉编译工具链（在配置阶段前通过 -DCMAKE_TOOLCHAIN_FILE 指定，
+# 默认使用系统 PATH 中的 arm-none-eabi-*）
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+
+# -----------------------------------------------------------------------------
+# 全局编译选项
+# -----------------------------------------------------------------------------
+add_compile_options(-mcpu=cortex-m3 -mthumb -Wall -ffunction-sections -fdata-sections)
+add_compile_options($<$<COMPILE_LANGUAGE:C>:-std=gnu11>)
+add_link_options(-mcpu=cortex-m3 -mthumb -Wl,--gc-sections -Wl,-Map=${CMAKE_BINARY_DIR}/stm32f103.map)
+
+# -----------------------------------------------------------------------------
+# 通用 include 路径（被 OSAL、modules、applications 共用）
+# -----------------------------------------------------------------------------
+include_directories(
+    ${CMAKE_SOURCE_DIR}/osal/include
+    ${CMAKE_SOURCE_DIR}/drivers/gpio
+    ${CMAKE_SOURCE_DIR}/drivers
+    ${CMAKE_SOURCE_DIR}/bsp
+)
+
+# -----------------------------------------------------------------------------
+# 选择并引入对应 RTOS 后端
+# -----------------------------------------------------------------------------
+if(RTOS STREQUAL "rt-thread")
+    set(RTOS_TYPE "rt-thread")
+    # rtconfig.h 由本工程 bsp 提供，覆盖 RT-Thread 内核默认行为
+    include_directories(${CMAKE_SOURCE_DIR}/bsp)
+    add_subdirectory(rtos/rt-thread
+                     ${CMAKE_BINARY_DIR}/rtos/rt-thread)
+elseif(RTOS STREQUAL "zephyr")
+    message(FATAL_ERROR "Zephyr 后端尚未接入，请先按 README 完成 git submodule 与 CMake 适配")
+elseif(RTOS STREQUAL "freertos")
+    message(FATAL_ERROR "FreeRTOS 后端尚未接入，请先按 README 完成 git submodule 与 CMake 适配")
+else()
+    message(FATAL_ERROR "未知 RTOS: '${RTOS}'。可选: rt-thread / zephyr / freertos")
+endif()
+message(STATUS "[stm32f103] 当前 RTOS 后端 = ${RTOS_TYPE}")
+
+# -----------------------------------------------------------------------------
+# 板级支持 (bsp)：含板级初始化 + 芯片启动文件/链接脚本(bsp/stm32f103/)
+# 外设驱动 (drivers)：按外设组件组织，自包含接口与芯片实现
+# -----------------------------------------------------------------------------
+add_subdirectory(bsp)
+add_subdirectory(drivers)
+
+# -----------------------------------------------------------------------------
+# 应用层
+# -----------------------------------------------------------------------------
+add_subdirectory(osal)
+add_subdirectory(modules)
+add_subdirectory(applications)
+
+# -----------------------------------------------------------------------------
+# 顶层可执行文件
+# -----------------------------------------------------------------------------
+if(NOT EXISTS ${BSP_LINK_SCRIPT})
+    message(FATAL_ERROR "找不到链接脚本: ${BSP_LINK_SCRIPT}")
+endif()
+
+add_executable(stm32f103.elf
+    $<TARGET_OBJECTS:board>
+    $<TARGET_OBJECTS:gpio>
+    $<TARGET_OBJECTS:osal>
+    $<TARGET_OBJECTS:modules>
+    $<TARGET_OBJECTS:applications>
+    ${MCU_STARTUP_FILE}
+)
+target_link_libraries(stm32f103.elf
+    PRIVATE
+    ${RTOS_KERNEL_TARGET}   # 由 rtos 后端定义链接依赖项
+)
+target_link_options(stm32f103.elf
+    PRIVATE -T ${BSP_LINK_SCRIPT}
+)
+set_target_properties(stm32f103.elf PROPERTIES
+    OUTPUT_NAME stm32f103
+)
+
+# -----------------------------------------------------------------------------
+# 输出镜像烧录文件
+# -----------------------------------------------------------------------------
+find_program(ARM_OBJCOPY arm-none-eabi-objcopy)
+if(ARM_OBJCOPY)
+    add_custom_command(TARGET stm32f103.elf POST_BUILD
+        COMMAND ${ARM_OBJCOPY} -O ihex $<TARGET_FILE:stm32f103.elf> ${CMAKE_BINARY_DIR}/stm32f103.hex
+        COMMAND ${ARM_OBJCOPY} -O binary $<TARGET_FILE:stm32f103.elf> ${CMAKE_BINARY_DIR}/stm32f103.bin
+        COMMENT "生成烧录镜像 stm32f103.hex / stm32f103.bin")
+endif()

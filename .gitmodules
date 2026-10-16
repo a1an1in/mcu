@@ -1,0 +1,6 @@
+[submodule "rtos/rt-thread"]
+	path = rtos/rt-thread
+	url = https://github.com/RT-Thread/rt-thread.git
+[submodule "rtos/zephyr"]
+	path = rtos/zephyr
+	url = https://github.com/zephyrproject-rtos/zephyr.git
