@@ -43,6 +43,16 @@ g_pfnVectors:
 Reset_Handler:
     ldr   sp, =_estack
 
+    /* 将向量表基址（VTOR）显式重定向到主 Flash（0x08000000）。
+     * BOOT0=1 时硬件把 0x00000000 映射到 ROM（系统内存），若不在此设置 VTOR，
+     * 后续首个中断（SysTick/PendSV）以及 RT-Thread 调度器启动时的 restore-MSP
+     * 都会从 ROM 向量表取值，把 CPU 拽回 ROM BootLoader。
+     * 此处最早设置后，中断/异常向量与初始栈顶均改从 Flash 向量表读取，
+     * 固件即可摆脱对 BOOT0 启动档的依赖，稳定运行。 */
+    ldr   r0, =0xE000ED08        /* SCB->VTOR */
+    ldr   r1, =0x08000000        /* 主 Flash 基址 */
+    str   r1, [r0]
+
     /* 拷贝 .data 到 RAM */
     ldr   r0, =_sidata
     ldr   r1, =_sdata

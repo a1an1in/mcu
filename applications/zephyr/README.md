@@ -13,7 +13,7 @@
 
 ## 前置条件
 
-1. Zephyr 依赖 Python 工具链（推荐直接用 `build-zephyr.sh`，它会自动处理）：
+1. Zephyr 依赖 Python 工具链（推荐直接用 `build_zephyr.py`，它会自动处理）：
    - 首次构建自动在 `build/<board>/zephyr/.venv-zephyr` 创建 Python venv，并按 Zephyr
      官方 `requirements-base.txt` 装齐依赖（pyyaml/jsonschema/pyelftools 等）；
    - 若要手工，可：
@@ -25,7 +25,7 @@
      ```
    （不需要安装 west。）
 2. 第三方模块按需拉取。stm32 只需 `hal_stm32`（加 `cmsis`），版本自动对齐
-   Zephyr `west.yml`；`build-zephyr.sh` 会在首次构建时把它们 clone 到
+   Zephyr `west.yml`；`build_zephyr.py` 会在首次构建时把它们 clone 到
    `build/stm32f103/zephyr/external/` 并用 `ZEPHYR_MODULES` 挂载。
 3. 交叉编译器。用 Zephyr 的 cross-compile 工具链变体挂上 arm-none-eabi-gcc
    （Zephyr 4.4 不再有 generic 变体）：
@@ -51,8 +51,8 @@ cmake --build build/stm32f103/zephyr
 ## 一步式
 
 ```bash
-./tools/devops.sh build --rtos zephyr            # Docker 内：按需拉取模块 + 配置 + 编译
-./tools/devops.sh build --rtos zephyr --zephyr-board stm32f103_mini
+python3 tools/devops.py build --rtos zephyr            # Docker 内：按需拉取模块 + 配置 + 编译
+python3 tools/devops.py build --rtos zephyr --zephyr-board stm32f103_mini
 ```
 
 > 说明：Zephyr 编译必须经历其 Kconfig/设备树生成流程，且依赖

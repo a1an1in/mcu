@@ -38,7 +38,7 @@ Zephyr 与 RT-Thread 的构建方式**根本不同**：Zephyr 是构建系统宿
 2. OSAL→Zephyr 适配已实现于 `osal/port/zephyr/`（7 个文件，见其 `README.md`）。
 3. Zephyr 应用入口 `applications/zephyr/` 以 `target_sources` 复用 `applications/`、`modules/`、
    `drivers/gpio/zephyr_gpio.c`、`osal/port/zephyr/*`，零改动。
-4. 构建：`./tools/devops.sh build --rtos zephyr`
+4. 构建：`python3 tools/devops.py build --rtos zephyr`
    （容器内自动按需拉取 hal_stm32 + cmsis（`ZEPHYR_MODULES` 挂载，非 west 全量）
     + 用 cross-compile 工具链编译；产物 `build/<board>/zephyr/zephyr/`）。
 

@@ -11,7 +11,7 @@
 #
 # 编译方式（示例，Zephyr 4.4 / ARM GCC cross-compile 工具链，精简模块模式）：
 #   export ZEPHYR_BASE=$ROOT/rtos/zephyr
-#   ./tools/build-zephyr.sh      # 自动：venv(pyelftools/pyyaml) + 按需拉取
+#   python3 tools/build_zephyr.py      # 自动：venv(pyelftools/pyyaml) + 按需拉取
 #                                #       hal_stm32/cmsis 到 build/stm32f103/zephyr/external/
 #                                #       + ZEPHYR_MODULES 挂载 + cmake 配置编译
 #   等价手工程序：
@@ -23,7 +23,7 @@
 #           -DCROSS_COMPILE=arm-none-eabi-
 #     cmake --build build/stm32f103/zephyr
 #
-# 也可直接用 ./tools/devops.sh build --rtos zephyr（内部完成上述步骤）。
+# 也可直接用 python3 tools/devops.py build --rtos zephyr（内部完成上述步骤）。
 # =============================================================================
 cmake_minimum_required(VERSION 3.20.0)
 

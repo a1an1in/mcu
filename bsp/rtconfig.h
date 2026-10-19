@@ -42,6 +42,8 @@
 
 /* ===== 内存管理（经典小内存堆） ===== */
 #define RT_USING_HEAP
+#define RT_USING_SMALL_MEM
+#define RT_USING_SMALL_MEM_AS_HEAP
 
 /* ===== 控制台：rt_kprintf 依赖 RT_USING_CONSOLE ===== */
 #define RT_USING_CONSOLE
@@ -55,7 +57,7 @@
 
 /* ===== 用户主线程 ===== */
 #define RT_USING_USER_MAIN
-#define RT_MAIN_THREAD_STACK_SIZE  2048
+#define RT_MAIN_THREAD_STACK_SIZE  4096
 #define RT_MAIN_THREAD_PRIORITY    10
 
 /* ===== 版本 & 调测 ===== */

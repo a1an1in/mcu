@@ -1,8 +1,8 @@
 # =============================================================================
 # STM32F103 编译 + 测试一体镜像
 # 提供可移植、可复现的完整开发环境：Ubuntu 24.04 + CMake + Ninja +
-#   - GCC-ARM(None-EABI) + newlib  → 交叉编译固件（tools/devops.sh build）
-#   - 宿主 gcc                     → 在容器内编译并运行 host 单元测试（tools/devops.sh tests）
+#   - GCC-ARM(None-EABI) + newlib  → 交叉编译固件（python3 tools/devops.py build）
+#   - 宿主 gcc                     → 在容器内编译并运行 host 单元测试（python3 tools/devops.py test）
 # 编译与测试共用这一份镜像；宿主机只需安装 Docker（烧录另需 openocd）。
 # =============================================================================
 FROM ubuntu:24.04

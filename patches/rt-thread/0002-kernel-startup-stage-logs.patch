@@ -1,0 +1,53 @@
+diff --git a/src/components.c b/src/components.c
+index 9a1db27617..2d11690009 100644
+--- a/src/components.c
++++ b/src/components.c
+@@ -246,38 +246,48 @@ int rtthread_startup(void)
+      * NOTE: please initialize heap inside board initialization.
+      */
+     rt_hw_board_init();
++    rt_kprintf("[RT-Thread] [startup] board init (uart+clock+heap)      OK\n");
+ 
+     /* show RT-Thread version */
+     rt_show_version();
++    rt_kprintf("[RT-Thread] [startup] version banner                    OK\n");
+ 
+     /* timer system initialization */
+     rt_system_timer_init();
++    rt_kprintf("[RT-Thread] [startup] system timer                      OK\n");
+ 
+     /* scheduler system initialization */
+     rt_system_scheduler_init();
++    rt_kprintf("[RT-Thread] [startup] scheduler init                    OK\n");
+ 
+ #ifdef RT_USING_SIGNALS
+     /* signal system initialization */
+     rt_system_signal_init();
++    rt_kprintf("[RT-Thread] [startup] signal init                       OK\n");
+ #endif /* RT_USING_SIGNALS */
+ 
+     /* create init_thread */
+     rt_application_init();
++    rt_kprintf("[RT-Thread] [startup] main thread created               OK\n");
+ 
+     /* timer thread initialization */
+     rt_system_timer_thread_init();
++    rt_kprintf("[RT-Thread] [startup] timer thread                      OK\n");
+ 
+     /* idle thread initialization */
+     rt_thread_idle_init();
++    rt_kprintf("[RT-Thread] [startup] idle thread                       OK\n");
+ 
+     /* defunct thread initialization */
+     rt_thread_defunct_init();
++    rt_kprintf("[RT-Thread] [startup] defunct thread                    OK\n");
+ 
+ #ifdef RT_USING_SMP
+     rt_hw_spin_lock(&_cpus_lock);
+ #endif /* RT_USING_SMP */
+ 
+     /* start scheduler */
++    rt_kprintf("[RT-Thread] [startup] starting scheduler\n");
+     rt_system_scheduler_start();
+ 
+     /* never reach here */

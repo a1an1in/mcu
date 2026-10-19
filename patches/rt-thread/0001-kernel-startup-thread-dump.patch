@@ -1,0 +1,44 @@
+diff --git a/src/object.c b/src/object.c
+index 1d5a211208..99de1a2c4c 100644
+--- a/src/object.c
++++ b/src/object.c
+@@ -813,4 +813,39 @@ rt_err_t rt_custom_object_destroy(rt_object_t obj)
+ #endif
+ 
+ /** @} group_object_management */
++/**
++ * @brief 只读遍历内核启动时已创建的线程对象并打印清单（供启动过程日志使用）。
++ *
++ * RT-Thread 的 _object_container 在本版本为 static，且本裁剪版未启用 RT_USING_DEVICE
++ * （无 rt_device 设备框架），因此这里遍历始终存在的"线程对象容器"来展示启动过程。
++ * 仅作启动诊断用，不修改任何内核状态。
++ */
++void rt_startup_threads_dump(void)
++{
++    struct rt_object_information *info = &_object_container[RT_Object_Info_Thread];
++    struct rt_list_node *node;
++    rt_uint32_t nr = 0u;
++
++    if (info == RT_NULL)
++    {
++        rt_kprintf("  (thread container unavailable)\n");
++        return;
++    }
++
++    rt_enter_critical();
++    rt_list_for_each(node, &info->object_list)
++    {
++        struct rt_object *obj = rt_list_entry(node, struct rt_object, list);
++
++        if (obj == RT_NULL)
++        {
++            continue;
++        }
++        rt_kprintf("  #%-2u  thread=%-8s type=0x%02x\n",
++                   nr++, obj->name, obj->type);
++    }
++    rt_exit_critical();
++
++    rt_kprintf("  ---- RT-Thread 启动时线程对象共 %u 个 ----\n", nr);
++}
+ 

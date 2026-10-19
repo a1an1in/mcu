@@ -3,7 +3,7 @@
 # 用桩替换 RT-Thread / Zephyr 头，使两个"操作系统自带驱动"的适配实现
 # 能在本机真实编译并运行，验证其与 gpio.h 接口的一致性（模块零改动）。
 # 另对自研 stm32f1_gpio.c 做 -fsyntax-only 编译冒烟（host 上写寄存器不安全）。
-# 用法: cmake -S tests/gpio -B build/tests … 或 ./tools/devops.sh tests
+# 用法: cmake -S tests/gpio -B build/tests … 或 python3 tools/devops.py test
 # =============================================================================
 cmake_minimum_required(VERSION 3.16)
 project(gpio_host_tests C)

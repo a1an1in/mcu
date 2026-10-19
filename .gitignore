@@ -17,12 +17,17 @@
 # ---- Toolchain caches ----
 .cache/
 
+# ---- Python bytecode cache ----
+__pycache__/
+*.py[cod]
+
 # ---- OS specific ----
 .DS_Store
 Thumbs.db
 
 # ---- 第三方 RTOS submodules 由其自身管理 ----
-# (rtos/ 下各 RTOS 是独立 git 仓库，通过 submodule 管理，不需要在此屏蔽)
+# (rtos/ 下各 RTOS 是独立 git 仓库，通过 submodule 管理；其工作区修改
+#  由 .gitmodules 的 ignore=dirty 过滤，不在此屏蔽)
 
 # ---- Zephyr 外部依赖（精简模式按需拉取，属外部检出，一律不提交） ----
 /rtos/zephyr/external/

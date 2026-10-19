@@ -1,0 +1,18 @@
+# =============================================================================
+# 99-cmsis-dap.rules - Linux 下放开 CMSIS-DAP / DAPLink 调试器访问权限
+#
+# 安装（宿主机，root 执行）：
+#     sudo cp tools/99-cmsis-dap.rules /etc/udev/rules.d/
+#     sudo udevadm control --reload-rules
+#     sudo udevadm trigger
+# 之后重新插拔 DAP；普通用户即可被 openocd / pyocd 访问。
+#
+# 说明：以下用 DAPLink 官方 VID=0d28。若你的 DAP 是其它 VID
+#      （lsusb 里能看到），把 0d28 换成实际值即可。
+# =============================================================================
+# CMSIS-DAP/DAPLink 通过 USB 枚举
+SUBSYSTEM=="usb", ATTR{idVendor}=="0d28", MODE="0666", GROUP="plugdev"
+# DAPLink 常以 HID(hidraw) 呈现
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0d28", MODE="0666", GROUP="plugdev"
+# 若固件带虚拟串口（如 ttyACM*），一并放开
+KERNEL=="ttyACM*", MODE="0666", GROUP="plugdev"

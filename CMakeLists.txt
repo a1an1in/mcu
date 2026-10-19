@@ -46,7 +46,10 @@ set(CMAKE_SYSTEM_PROCESSOR arm)
 # -----------------------------------------------------------------------------
 add_compile_options(-mcpu=cortex-m3 -mthumb -Wall -ffunction-sections -fdata-sections)
 add_compile_options($<$<COMPILE_LANGUAGE:C>:-std=gnu11>)
-add_link_options(-mcpu=cortex-m3 -mthumb -Wl,--gc-sections -Wl,-Map=${CMAKE_BINARY_DIR}/stm32f103.map)
+# --build-id=none：禁用 GNU build-id。部分 GCC（如 Xilinx arm-none-eabi 10.2）默认
+# 生成 .note.gnu.build-id 段，因链接脚本未给该段指定位置，会被 ld 摆到 0x08000000，
+# 把中断向量表挤偏 0x24 字节，导致复位从错误地址取向量、无法启动。显式禁用。
+add_link_options(-mcpu=cortex-m3 -mthumb -Wl,--gc-sections -Wl,--build-id=none -Wl,-Map=${CMAKE_BINARY_DIR}/stm32f103.map)
 
 # -----------------------------------------------------------------------------
 # 通用 include 路径（被 OSAL、modules、applications 共用）
@@ -71,9 +74,9 @@ elseif(RTOS STREQUAL "zephyr")
     # Zephyr 与 RT-Thread 构建方式不同：Zephyr 是构建系统宿主（内核/驱动/设备树/链接脚本全接管），
     # 无法像 RT-Thread 那样在本 CMakeLists 中 add_subdirectory 集成。Zephyr 编译请改走
     # 独立应用工程 applications/zephyr/（含 OSAL→Zephyr 适配 osal/port/zephyr/）：
-    #   ./tools/devops.sh build --rtos zephyr          # (build-zephyr.sh 按需拉取模块 + 编译)
+    #   python3 tools/devops.py build --rtos zephyr          # (build_zephyr.py 按需拉取模块 + 编译)
     # 手工方式见 applications/zephyr/README.md。
-    message(FATAL_ERROR "RTOS=zephyr 请改用 ./tools/devops.sh build --rtos zephyr "
+    message(FATAL_ERROR "RTOS=zephyr 请改用 python3 tools/devops.py build --rtos zephyr "
         "（Zephyr 是独立构建宿主，应用在 applications/zephyr/，不在本 CMakeLists 编译）")
 elseif(RTOS STREQUAL "freertos")
     message(FATAL_ERROR "FreeRTOS 后端尚未接入，请先按 README 完成 git submodule 与 CMake 适配")

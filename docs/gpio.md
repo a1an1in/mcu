@@ -13,8 +13,8 @@
 本工程 `tests/gpio/` 用**桩头**替换 OS 头，使这两个适配实现能在 host 上真实编译并运行断言。
 
 ```bash
-./tools/devops.sh build --host   # 编译固件 + 编译 host 单测程序（仅编译，不运行）
-./tools/devops.sh test           # 只运行已编译的 host 单测
+python3 tools/devops.py build --host   # 编译固件 + 编译 host 单测程序（仅编译，不运行）
+python3 tools/devops.py test           # 只运行已编译的 host 单测
 ```
 
 > 说明：自研 `stm32f1_gpio.c` 直接访问寄存器地址，host 上运行会段错误，故仅做编译冒烟

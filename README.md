@@ -7,8 +7,8 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 核心目标：**跨 RTOS 可扩展** —— 应用代码只依赖自研的 **OSAL 抽象层**，
 因此可平滑迁移到 **Zephyr / FreeRTOS**，业务代码无需改动。
 
-- 一键编译：`./tools/devops.sh build`（Docker 交叉编译，宿主机零工具链；产物 `build/<BOARD>/`，默认板 `stm32f103`）。板子/内核/GPIO 后端用选项指定：`build --board f103 --rtos rt-thread`，也可 `build --rtos zephyr`（走 Zephyr 自带构建体系，见 `applications/zephyr/`）
-- 一键烧录：`./tools/devops.sh flash`
+- 一键编译：`python3 tools/devops.py build`（Docker 交叉编译，宿主机零工具链；产物 `build/<BOARD>/`，默认板 `stm32f103`）。板子/内核/GPIO 后端用选项指定：`build --board f103 --rtos rt-thread`，也可 `build --rtos zephyr`（走 Zephyr 自带构建体系，见 `applications/zephyr/`）
+- 一键烧录：`python3 tools/devops.py flash`
 - 详细说明见 `docs/`（下表导航）。
 
 ## 目录结构（文件导航）
@@ -28,7 +28,7 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 | `cmake/` | 工具链、构建辅助文件 | — |
 | `docker/` | 可移植编译环境（`Dockerfile`） | `docs/build-flash-debug.md` |
 | `patches/` | 针对 submodule 的自制补丁 | `docs/dependencies-patches.md` |
-| `tools/` | `devops.sh`（Docker编译/烧录/测试统一入口）+ OpenOCD 配置 | `docs/build-flash-debug.md` |
+| `tools/` | `devops.py`（Docker编译/烧录/测试统一入口，纯 Python 3 跨平台）+ OpenOCD 配置 | `docs/build-flash-debug.md` |
 | `docs/` | 文档（见下方导航） | 本页下方 |
 
 ## 文档导航
@@ -46,12 +46,13 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 
 ```bash
 git submodule update --init           # 首次拉取内核
-./tools/devops.sh build               # Docker 交叉编译固件（RT-Thread，只编译固件）
-./tools/devops.sh build --rtos zephyr # 改用 Zephyr 构建（容器内 west init/update + 编译，需网络）
-./tools/devops.sh build --host        # 编译固件 + 编译 host 单测程序（仅编译，不运行）
-./tools/devops.sh build --clean       # 干净重建：先清掉本次固件构建目录再编译（zephyr 保留 .venv-zephyr/external，无需联网重拉模块）
-./tools/devops.sh test                # 只运行已编译的 host 单测（需先 build --host）
-./tools/devops.sh flash               # 烧录（ST-Link）
+python3 tools/devops.py build               # Docker 交叉编译固件（RT-Thread，只编译固件）
+rt-thread # 改用 rt-thread 构建
+python3 tools/devops.py build --rtos zephyr # 改用 Zephyr 构建（容器内按需拉取模块 + 编译，需网络）
+python3 tools/devops.py build --host        # 编译固件 + 编译 host 单测程序（仅编译，不运行）
+python3 tools/devops.py build --clean       # 干净重建：先清掉本次固件构建目录再编译（zephyr 保留 .venv-zephyr/external，无需联网重拉模块）
+python3 tools/devops.py test                # 只运行已编译的 host 单测（需先 build --host）
+python3 tools/devops.py flash               # 烧录（ST-Link）
 ```
 
 ## 许可证
