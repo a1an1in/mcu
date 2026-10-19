@@ -7,6 +7,9 @@
  */
 #include <osal.h>
 
+#include "key.h"
+#include "led.h"
+
 #ifdef __ZEPHYR__
 /* Zephyr 专属：运行时枚举已注册的设备/驱动（device 表来自 DTS + 驱动声明）。
    放在共享 main.c 的 __ZEPHYR__ 分支内，RT-Thread 编译完全不经过这里。 */
@@ -106,6 +109,117 @@ static void boot_devices_dump_rtthread(const char *rtos)
 
 #endif /* __ZEPHYR__ */
 
+/* ---------------------------------------------------------------------------
+ * 硬件自测：板载按键 + 板载 LED（战舰 STM32F103 V4）
+ *
+ *   KEY0(PE4) 按住 → DS0(PB5) 亮          松开 → 灭
+ *   KEY1(PE3) 按住 → DS1(PE5) 亮          松开 → 灭
+ *   KEY2(PE2) 按一下 → 两个 LED 每 500ms 交替闪；再按一下 → 停止并全灭
+ *
+ * 链路：modules/key（20ms 消抖、内部上/下拉、按下边沿事件）
+ *        └──> 本线程（映射策略）──> modules/led（低电平点亮）
+ * 全程只经过 OSAL 与 gpio.h，换 RTOS（rt-thread/zephyr）或换 GPIO 后端
+ * （-DGPIO_BACKEND=）都不用改这里。
+ * 按键事件同步打印到 UART1，串口助手上能直接看到。
+ *
+ * 优先级约定：手动优先 —— 只要 KEY0/KEY1 有一个被按住，就按「按住哪个亮哪个」
+ * 显示；两个都松开后，若交替闪烁是开着的，再从当前相位继续。
+ * --------------------------------------------------------------------------- */
+#define HW_TEST_STACK_SIZE   1024u
+#define HW_TEST_PRIORITY     12u
+#define HW_TEST_POLL_MS      10u
+#define HW_TEST_ALT_TICKS    50u     /* 50 × 10ms = 500ms 交替一次 */
+
+static void key_led_test_entry(void *param)
+{
+    uint32_t tick = 0;
+    int alt_on    = 0;    /* KEY2 切换的「交替闪烁」开关 */
+    int alt_phase = 0;    /* 交替相位：0 → DS0 亮，1 → DS1 亮 */
+    int last_k0   = -1;   /* -1：确保首轮先把初始状态打印出来 */
+    int last_k1   = -1;
+    int k0, k1;
+
+    (void)param;
+
+    for (;;)
+    {
+        k0 = key_is_down(KEY_0);
+        k1 = key_is_down(KEY_1);
+
+        /* KEY2 用「读取即清除」的按下边沿：按一下翻转一次，按住不会连翻 */
+        if (key_pressed(KEY_2))
+        {
+            alt_on    = !alt_on;
+            alt_phase = 0;
+            osal_printf("\n[hw-test] KEY2 按下 -> 交替闪烁 %s",
+                        alt_on ? "开始（DS0/DS1 每 500ms 轮流亮）" : "停止（全灭）");
+        }
+
+        /* 自由运行的分频器：不论当前什么模式都在走，交替相位因此是连续的 */
+        if (++tick >= HW_TEST_ALT_TICKS)
+        {
+            tick = 0;
+            alt_phase = !alt_phase;
+        }
+
+        if (k0 || k1)
+        {
+            /* 手动优先：按住哪个亮哪个（两个都按住就两个都亮） */
+            led_set(LED_DS0, k0);
+            led_set(LED_DS1, k1);
+        }
+        else if (alt_on)
+        {
+            led_set(LED_DS0, alt_phase);
+            led_set(LED_DS1, !alt_phase);
+        }
+        else
+        {
+            led_set(LED_DS0, 0);
+            led_set(LED_DS1, 0);
+        }
+
+        /* 只在电平真的变化时打印，避免每 10ms 刷屏 */
+        if (k0 != last_k0)
+        {
+            last_k0 = k0;
+            osal_printf("\n[hw-test] KEY0 %s -> DS0 %s",
+                        k0 ? "按下" : "松开",
+                        k0 ? "点亮" : "熄灭");
+        }
+        if (k1 != last_k1)
+        {
+            last_k1 = k1;
+            osal_printf("\n[hw-test] KEY1 %s -> DS1 %s",
+                        k1 ? "按下" : "松开",
+                        k1 ? "点亮" : "熄灭");
+        }
+
+        osal_thread_sleep_ms(HW_TEST_POLL_MS);
+    }
+}
+
+static void hw_test_start(void)
+{
+    osal_thread_t t = OSAL_NULL;
+
+    led_init();
+
+    key_init();
+
+    led_set(LED_DS0, 0);    /* 明确熄一次，避免上电残留 */
+    led_set(LED_DS1, 0);
+    osal_printf("\n[hw-test] ready: KEY0 按住->DS0 亮 / KEY1 按住->DS1 亮 /"
+                " KEY2 按一下->两灯交替闪（DS0=PB5、DS1=PE5，低电平点亮）");
+
+    if (osal_thread_create(&t, "keyled", key_led_test_entry, OSAL_NULL,
+                           OSAL_NULL, HW_TEST_STACK_SIZE,
+                           HW_TEST_PRIORITY) != OSAL_OK)
+    {
+        osal_printf("\n[hw-test] create thread failed");
+    }
+}
+
 /* RT-Thread 系统完成初始化后，会在 main 线程中调用 main() */
 int main(void)
 {
@@ -127,6 +241,10 @@ int main(void)
 #else
     boot_devices_dump_rtthread(rtos);
 #endif
+
+    /* 硬件自测：KEY0/KEY1 按住点亮各自 LED，KEY2 切换两灯交替闪
+     * （起独立线程，主线程继续跑下面的心跳） */
+    hw_test_start();
 
     /* 周期性打印：把 Hello 也并入每 3 秒一次的心跳，避免因串口助手
      * 开启较晚/首屏刷新而错过启动时的一次性输出，保证任何时候都能看到。 */
