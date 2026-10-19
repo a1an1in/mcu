@@ -145,16 +145,7 @@
 
 ### P6 OpenOCD + DAP 复位总进 ROM，无法让固件常驻连续运行
 
-- **现象**：任何 `resume`（断点接力、从 Reset_Handler 起跑、`SRST only`、`VTOR` 重定向）
-  后，PC 都会落回 ROM BootLoader（`0x1FFF_F020` 附近）或直接 HardFault。
-- **根因**：这块 DAP + openocd 的调试复位无法替代物理复位；复位后 `BOOT0=1` 时
-  `0x00000000` 被硬件映射到 ROM，而固件**从不把 `SCB->VTOR` 设到 Flash**，于是运行中
-  首个中断（SysTick 等）的向量取自 ROM 向量表，被带回 ROM（精确机理见 §7）。
-  尝试 `SCB->VTOR`(0xE000ED08)=Flash 重定向会与固件异常处理冲突 → HardFault。
-- **处理**：放弃用调试器“连续跑固件”，改以**单步执行**验证 Flash 可执行性 +
-  **反汇编**验证 main 通路 + **物理断电重启**做真机确认。
-- **经验**：当怀疑“固件没输出”时，不要只依赖调试器状态，**先物理断电重启**排除
-  “调试暂停”这一层，再决定是否深入代码。
+-  参考serial-boot0-rom-issue.md文件，这个问题已经解决
 
 ---
 

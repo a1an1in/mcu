@@ -132,7 +132,7 @@ int main(void)
      * 开启较晚/首屏刷新而错过启动时的一次性输出，保证任何时候都能看到。 */
     for (;;)
     {
-        osal_printf("\n[app30-%s] heartbeat #%u : Hello, world! (STM32F103, OSAL backend: %s) via UART1",
+        osal_printf("\n[app31-%s] heartbeat #%u : Hello, world! (STM32F103, OSAL backend: %s) via UART1",
                     rtos, (unsigned)n++, rtos);
         osal_thread_sleep_ms(3000u);
     }
