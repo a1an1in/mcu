@@ -11,6 +11,7 @@
 gpio_flags_t     zgpio_stub_conf(const struct device *dev, gpio_pin_t pin);
 int              zgpio_stub_value(const struct device *dev, gpio_pin_t pin);
 const struct device *zgpio_stub_dev(int port);
+void             zgpio_stub_set_value(const struct device *dev, gpio_pin_t pin, int value);
 
 static int failures = 0;
 
@@ -50,6 +51,27 @@ int main(void)
     CHECK(zgpio_stub_conf(zgpio_stub_dev(GPIO_PORT_A), 0u) == GPIO_OUTPUT);
     gpio_write(GPIO_PIN(GPIO_PORT_B, 15u), 1);
     CHECK(zgpio_stub_value(zgpio_stub_dev(GPIO_PORT_B), 15u) == 1);
+
+    /* gpio_input_init -> gpio_pin_configure(GPIO_INPUT [| GPIO_PULL_UP/DOWN]) */
+    {
+        gpio_pin_enc_t key1 = GPIO_PIN(GPIO_PORT_E, 3u);
+        const struct device *dev_e = zgpio_stub_dev(GPIO_PORT_E);
+
+        gpio_input_init(key1, GPIO_IN_PULLUP);
+        CHECK(zgpio_stub_conf(dev_e, 3u) == (GPIO_INPUT | GPIO_PULL_UP));
+
+        gpio_input_init(key1, GPIO_IN_PULLDOWN);
+        CHECK(zgpio_stub_conf(dev_e, 3u) == (GPIO_INPUT | GPIO_PULL_DOWN));
+
+        gpio_input_init(key1, GPIO_IN_FLOAT);
+        CHECK(zgpio_stub_conf(dev_e, 3u) == GPIO_INPUT);
+
+        /* 输入模式下 gpio_read 仍走 gpio_pin_get */
+        zgpio_stub_set_value(dev_e, 3u, 1);
+        CHECK(gpio_read(key1) == 1);
+        zgpio_stub_set_value(dev_e, 3u, 0);
+        CHECK(gpio_read(key1) == 0);
+    }
 
     if (failures == 0)
     {

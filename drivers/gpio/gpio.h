@@ -33,6 +33,18 @@ void gpio_init(void);
 /* 将引脚配置为推挽输出 */
 void gpio_output_init(gpio_pin_enc_t pin);
 
+/* 输入模式的上/下拉选择。
+ * 名字刻意避开 GPIO_PULL_* —— 那会和 Zephyr 的 GPIO_PULL_UP/GPIO_PULL_DOWN 宏撞名，
+ * 而 zephyr_gpio.c 需要同时包含两边的头文件。 */
+typedef enum {
+    GPIO_IN_FLOAT = 0,    /* 浮空输入 */
+    GPIO_IN_PULLUP,       /* 上拉输入（按键接地型：按下读到低） */
+    GPIO_IN_PULLDOWN,     /* 下拉输入（按键接 3.3V 型：按下读到高） */
+} gpio_pull_t;
+
+/* 将引脚配置为输入模式，并选择内部上/下拉（按键、跳线等输入场景） */
+void gpio_input_init(gpio_pin_enc_t pin, gpio_pull_t pull);
+
 /* 输出电平：val 非 0 输出高，0 输出低 */
 void gpio_write(gpio_pin_enc_t pin, int val);
 

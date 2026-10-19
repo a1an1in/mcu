@@ -45,6 +45,20 @@ void gpio_output_init(gpio_pin_enc_t pin)
         gpio_pin_configure(dev, (gpio_pin_t)(pin & 0xFFu), GPIO_OUTPUT);
 }
 
+void gpio_input_init(gpio_pin_enc_t pin, gpio_pull_t pull)
+{
+    const struct device *dev = to_dev(pin);
+    gpio_flags_t flags = GPIO_INPUT;
+
+    if (pull == GPIO_IN_PULLUP)
+        flags |= GPIO_PULL_UP;
+    else if (pull == GPIO_IN_PULLDOWN)
+        flags |= GPIO_PULL_DOWN;
+
+    if (dev != NULL)
+        gpio_pin_configure(dev, (gpio_pin_t)(pin & 0xFFu), flags);
+}
+
 void gpio_write(gpio_pin_enc_t pin, int val)
 {
     const struct device *dev = to_dev(pin);

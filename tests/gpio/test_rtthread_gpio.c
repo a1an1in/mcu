@@ -10,6 +10,7 @@
 /* 桩观测接口（rt_pin_stub.c） */
 int rt_pin_stub_mode(rt_base_t pin);
 int rt_pin_stub_value(rt_base_t pin);
+void rt_pin_stub_set_value(rt_base_t pin, int value);   /* 模拟外部引脚电平 */
 
 static int failures = 0;
 
@@ -47,6 +48,27 @@ int main(void)
     CHECK(rt_pin_stub_value(0) == PIN_HIGH);
     gpio_write(GPIO_PIN(GPIO_PORT_B, 15u), 1);
     CHECK(rt_pin_stub_value(31) == PIN_HIGH);
+
+    /* gpio_input_init -> rt_pin_mode(输入 + 上/下拉) */
+    {
+        gpio_pin_enc_t key1 = GPIO_PIN(GPIO_PORT_E, 3u);   /* PE3 -> 线性引脚号 4*16+3 */
+        rt_base_t rt_key1 = 4 * 16 + 3;
+
+        gpio_input_init(key1, GPIO_IN_PULLUP);
+        CHECK(rt_pin_stub_mode(rt_key1) == PIN_MODE_INPUT_PULLUP);
+
+        gpio_input_init(key1, GPIO_IN_PULLDOWN);
+        CHECK(rt_pin_stub_mode(rt_key1) == PIN_MODE_INPUT_PULLDOWN);
+
+        gpio_input_init(key1, GPIO_IN_FLOAT);
+        CHECK(rt_pin_stub_mode(rt_key1) == PIN_MODE_INPUT);
+
+        /* 输入模式下 gpio_read 仍走 rt_pin_read */
+        rt_pin_stub_set_value(rt_key1, PIN_LOW);
+        CHECK(gpio_read(key1) == 0);
+        rt_pin_stub_set_value(rt_key1, PIN_HIGH);
+        CHECK(gpio_read(key1) == 1);
+    }
 
     if (failures == 0)
     {

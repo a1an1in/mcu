@@ -12,7 +12,11 @@
 typedef uint8_t  gpio_pin_t;
 typedef uint32_t gpio_flags_t;
 
-#define GPIO_OUTPUT  (1u << 17)
+/* 与 Zephyr include/zephyr/drivers/gpio.h 的取值保持一致 */
+#define GPIO_PULL_UP   (1u << 4)
+#define GPIO_PULL_DOWN (1u << 5)
+#define GPIO_INPUT     (1u << 16)
+#define GPIO_OUTPUT    (1u << 17)
 
 /* 5 个 GPIO 端口的桩设备对象（由 zephyr_gpio_stub.c 定义） */
 extern const struct device __gpio_dev_gpioa;

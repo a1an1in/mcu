@@ -76,6 +76,37 @@ void gpio_write(gpio_pin_enc_t pin, int val)
         GPIO_BSRR(s_gpio_base[port]) = (1u << (p + 16u)); /* BRx 复位 */
 }
 
+/*
+ * 输入模式 + 上/下拉。
+ * STM32F1 的输入配置只占 CNF 两位，上下拉方向由 ODR 位选择：
+ *   CNF=01 (0x4) 浮空输入；CNF=10 (0x8) 输入（上拉或下拉，看 ODR）
+ *   MODE=00 输入模式
+ * 注意：输入模式下写 BSRR 改的是 ODR 位，正好用来选上拉/下拉，不会影响引脚电平。
+ */
+void gpio_input_init(gpio_pin_enc_t pin, gpio_pull_t pull)
+{
+    uint32_t port = (pin >> 8) & 0xFFu;
+    uint32_t p    = pin & 0xFFu;
+    volatile uint32_t *cfg;
+    uint32_t bitoff, mask, cnf;
+
+    if (port > 4u)
+        return;
+
+    RCC_APB2ENR |= (1u << s_port_clk[port]);
+
+    cfg    = (p < 8) ? (&GPIO_CRL(s_gpio_base[port])) : (&GPIO_CRH(s_gpio_base[port]));
+    bitoff = (p & 0x07u) * 4u;
+    mask   = 0xFu << bitoff;
+
+    cnf = (pull == GPIO_IN_FLOAT) ? 0x4u : 0x8u;
+
+    *cfg = (*cfg & ~mask) | (cnf << bitoff);
+
+    /* ODR：1=上拉，0=下拉（GPIO_IN_FLOAT 时该位无意义） */
+    gpio_write(pin, (pull == GPIO_IN_PULLUP) ? 1 : 0);
+}
+
 int gpio_read(gpio_pin_enc_t pin)
 {
     uint32_t port = (pin >> 8) & 0xFFu;

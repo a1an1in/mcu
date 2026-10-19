@@ -41,6 +41,24 @@ void gpio_write(gpio_pin_enc_t pin, int val)
     rt_pin_write(to_rt_pin(pin), val ? PIN_HIGH : PIN_LOW);
 }
 
+void gpio_input_init(gpio_pin_enc_t pin, gpio_pull_t pull)
+{
+    rt_base_t p = to_rt_pin(pin);
+
+    switch (pull)
+    {
+    case GPIO_IN_PULLUP:
+        rt_pin_mode(p, PIN_MODE_INPUT_PULLUP);
+        break;
+    case GPIO_IN_PULLDOWN:
+        rt_pin_mode(p, PIN_MODE_INPUT_PULLDOWN);
+        break;
+    default:
+        rt_pin_mode(p, PIN_MODE_INPUT);
+        break;
+    }
+}
+
 int gpio_read(gpio_pin_enc_t pin)
 {
     return rt_pin_read(to_rt_pin(pin)) ? 1 : 0;
