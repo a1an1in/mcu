@@ -280,8 +280,17 @@ def do_build_test() -> None:
     ensure_image()
     tbuild = _test_build_dir()
     log(f"[devops] 编译 host 单测程序（宿主 gcc，仅编译，不运行）：{tbuild}")
+
+    # 测试工程入口曾位于 tests/gpio，后上移为 tests/（多子目录聚合）。
+    # 旧缓存里的 CMAKE_HOME_DIRECTORY 会让 cmake 直接报错，这里检测到源入口
+    # 不一致就清掉重建（幂等，且只动 host 单测目录，不影响固件产物）。
+    cache = Path(tbuild) / "CMakeCache.txt"
+    if cache.is_file() and "tests/gpio" in cache.read_text(errors="ignore"):
+        shutil.rmtree(tbuild)
+        log(f"[devops] 旧版 host 单测构建目录（源入口为 tests/gpio）已清理，将按 tests/ 重建")
+
     inline = """set -e
-cmake -S tests/gpio -B "$TEST_BUILD" -G "$GEN"
+cmake -S tests -B "$TEST_BUILD" -G "$GEN"
 cmake --build "$TEST_BUILD"
 """
     run(_docker_base() + [
@@ -295,7 +304,7 @@ cmake --build "$TEST_BUILD"
 # ---- 运行 host 单测（只运行 build --host 已编译好的程序，不重新编译）----
 def do_test() -> None:
     tbuild = _test_build_dir()
-    if not (Path(tbuild) / "test_rtthread_gpio").is_file():
+    if not (Path(tbuild) / "gpio" / "test_rtthread_gpio").is_file():
         die("[devops] 尚未编译 host 单测程序，请先运行：python3 tools/devops.py build --host（或 --test）。")
     ensure_image()
     log(f"[devops] 运行 host 单测（目标板 {BOARD}，目录 {tbuild}）")
