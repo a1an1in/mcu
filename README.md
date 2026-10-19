@@ -44,10 +44,15 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 
 ## 一分钟上手
 
+> **Windows 用户**：请把下面的 `python3` 换成 `python`（或 `py`）——Windows 上的 `python3`
+> 默认是 Microsoft Store 占位符，运行会静默无输出（想保留 `python3` 可在 Python 安装目录
+> 把 `python.exe` 复制为 `python3.exe`）。烧录(`flash`) 在宿主机执行，需另装 `openocd` 并
+> 接好调试器（本板 CMSIS-DAP 配置已内置 VID:PID，Windows 直接烧录不需要 usbipd 或 Zadig）；
+> 编译(`build`/`test`) 在 Docker 内完成，无需宿主机工具链。
+
 ```bash
 git submodule update --init           # 首次拉取内核
 python3 tools/devops.py build               # Docker 交叉编译固件（RT-Thread，只编译固件）
-rt-thread # 改用 rt-thread 构建
 python3 tools/devops.py build --rtos zephyr # 改用 Zephyr 构建（容器内按需拉取模块 + 编译，需网络）
 python3 tools/devops.py build --host        # 编译固件 + 编译 host 单测程序（仅编译，不运行）
 python3 tools/devops.py build --clean       # 干净重建：先清掉本次固件构建目录再编译（zephyr 保留 .venv-zephyr/external，无需联网重拉模块）

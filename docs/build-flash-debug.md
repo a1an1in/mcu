@@ -3,6 +3,18 @@
 本工程所有构建 / 运维操作统一经 `tools/devops.py`（纯 Python 3 跨平台实现）。
 **构建一律在 Docker 交叉编译镜像内完成，宿主机无需安装任何交叉工具链。**
 
+> **命令前缀（重要）**：本文示例用 `python3`。在 **Windows PowerShell/CMD** 下，`python3`
+> 默认是 Microsoft Store 占位符（运行会静默无输出），请改用 `python`（或 `py`）；若想
+> 让 `python3` 也能用，可在 Python 安装目录把 `python.exe` 复制为 `python3.exe`（本机
+> 已这样处理）。Linux / WSL / macOS 保持 `python3`。
+>
+> **编译 vs 烧录的环境差异**：`build` / `test` 在 Docker 容器内完成，宿主机零工具链；
+> `flash` / `reboot` 在**宿主机**执行（需直接看到调试器 USB），因此宿主机必须安装
+> `openocd`。本板正点原子 ATK-FS CMSIS-DAP（VID:PID `04d8:00df`，FW 2.0.0）用系统自带
+> 驱动即可访问，**无需 Zadig 换 WinUSB**；`tools/openocd-stm32f1-dap.cfg` 已内置
+> `cmsis_dap_vid_pid`。Windows 侧直接烧录不需要 usbipd；仅当「想在 WSL 里烧、但调试器
+> 只接在 Windows 上」才需要 usbipd 转发。
+
 ---
 
 ## 1. 前置：首次拉取子模块

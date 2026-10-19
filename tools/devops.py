@@ -126,10 +126,95 @@ def kill_openocd() -> None:
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def _container_path(p) -> str:
+    """把宿主机路径转成容器内可用的 POSIX 绝对路径。
+
+    在 Linux/macOS/WSL 下宿主机与容器路径本就一致，原样返回；
+    在 Windows(Docker Desktop) 下，Windows 路径（如 C:\\a\\b）不能作为容器侧的
+    挂载目标 / 工作目录，需映射成 /c/a/b（Git-Bash / MSYS 风格）。
+    """
+    s = str(p).replace("\\", "/")
+    m = re.match(r"^([A-Za-z]):(.*)$", s)
+    if os.name == "nt" and m:
+        return f"/{m.group(1).lower()}{m.group(2)}"
+    return s
+
+
+def _posix_path(p) -> str:
+    """把路径规范为正斜杠风格，供宿主机 openocd 命令行使用。
+
+    Windows 下 str(Path) 产生反斜杠路径，而 openocd 的 -c "program ..." 命令经
+    Tcl 解析，反斜杠会被当作转义符导致路径错乱；统一转为正斜杠最稳妥。
+    Linux/WSL/macOS 下本无反斜杠，等价于原样返回。
+    """
+    return str(p).replace("\\", "/")
+
+
+def _find_openocd() -> "str | None":
+    """定位 openocd 可执行文件：优先 PATH，回退探测常见 xpack 安装位置。
+
+    VS Code / 早期打开的终端等旧进程，其 PATH 是启动时的快照，可能不含后来才
+    加入 PATH 的 openocd；这里回退到常见安装目录，保证 flash/reboot 依然能跑。
+    """
+    ocd = shutil.which("openocd")
+    if ocd:
+        return ocd
+    if os.name == "nt":
+        for base in (Path.home() / "tools", Path.home() / "xpack"):
+            hits = sorted(base.glob("xpack-openocd-*/bin/openocd.exe"))
+            if hits:
+                return str(hits[-1])
+    return None
+
+
+def _openocd_scripts(ocd: str) -> "str | None":
+    """从 openocd 可执行文件位置推导内置脚本目录（含 interface/ 子目录）。"""
+    bindir = Path(ocd).resolve().parent
+    for rel in ("../openocd/scripts", "../share/openocd/scripts", "../scripts"):
+        p = (bindir / rel).resolve()
+        if (p / "interface").is_dir():
+            return str(p)
+    return None
+
+
+def _openocd_cmd() -> list:
+    """构造 openocd 调用前缀（绝对路径 + -s 脚本目录），确保内置脚本可被找到。"""
+    ocd = _find_openocd()
+    if not ocd:
+        die("[devops] 未找到 openocd（flash/reboot 需宿主机安装 openocd）")
+    scripts = _openocd_scripts(ocd)
+    cmd = [ocd]
+    if scripts:
+        cmd += ["-s", _posix_path(scripts)]
+    return cmd
+
+
+def provision_rtos_cmake() -> None:
+    """把受管的 RT-Thread CMake 集成文件复制进 submodule（构建/进入 shell 前自动调用）。
+
+    RT-Thread 官方仓库不含根 CMakeLists.txt，且其 .gitignore 会忽略 CMakeLists.txt，
+    无法把该文件托管在 submodule 内。这里把它作为受管文件置于
+    cmake/rt-thread/CMakeLists.txt，构建前复制到 rtos/rt-thread/ 下，保证
+    Linux/Windows 全新克隆（git submodule update --init 之后）也能直接构建。
+    幂等：目标内容与模板一致时跳过，不重复写。
+    """
+    src = ROOT / "cmake" / "rt-thread" / "CMakeLists.txt"
+    dst = ROOT / "rtos" / "rt-thread" / "CMakeLists.txt"
+    if not src.is_file():
+        die(f"[devops] 缺少受管集成文件 {src}（请勿删除 cmake/rt-thread/CMakeLists.txt）")
+    if not (dst.parent / ".git").exists():
+        die(f"[devops] RT-Thread 子模块未初始化：{dst.parent}"
+            f"（请先执行 git submodule update --init rtos/rt-thread）")
+    if dst.is_file() and dst.read_bytes() == src.read_bytes():
+        return
+    shutil.copyfile(src, dst)
+    log(f"[devops] 已部署 RT-Thread CMake 集成文件 -> {dst}")
+
+
 def _docker_base() -> list:
     """docker run 公共参数：以当前用户挂载工程根目录并作为工作目录。"""
     return ["docker", "run", "--rm", *docker_user_args(),
-            "-v", f"{ROOT}:{ROOT}", "-w", str(ROOT)]
+            "-v", f"{ROOT}:{_container_path(ROOT)}", "-w", _container_path(ROOT)]
 
 
 # ---- 编译固件（Docker 交叉编译，arm-none-eabi-gcc）----
@@ -144,9 +229,9 @@ def do_build() -> None:
     if RTOS == "zephyr":
         log(f"[devops] Zephyr 构建：BOARD（Zephyr 板）={ZEPHYR_BOARD}")
         run(_docker_base() + [
-            "-e", f"ZEPHYR_BASE={ROOT}/rtos/zephyr",
+            "-e", f"ZEPHYR_BASE={_container_path(ROOT)}/rtos/zephyr",
             "-e", f"ZEPHYR_BOARD={ZEPHYR_BOARD}",
-            "-e", f"BUILD_DIR={BUILD_DIR}/zephyr",
+            "-e", f"BUILD_DIR={_container_path(BUILD_DIR)}/zephyr",
             "-e", f"GEN={GEN}",
             IMG, "bash", "-lc", "set -e\npython3 tools/build_zephyr.py",
         ])
@@ -156,6 +241,10 @@ def do_build() -> None:
         log(f"        HEX : {BUILD_DIR}/zephyr/zephyr/zephyr.hex")
         log(f"        map : {BUILD_DIR}/zephyr/zephyr/zephyr.map")
         return
+
+    # RT-Thread 走本工程顶层 CMakeLists 装配，需先把受管的集成 CMakeLists 部署进 submodule。
+    if RTOS == "rt-thread":
+        provision_rtos_cmake()
 
     inline = """set -e
 python3 tools/apply_patches.py
@@ -170,9 +259,9 @@ cmake --build "${BUILD_DIR}/rt-thread"
         "-e", f"BOARD={BOARD}",
         "-e", f"RTOS={RTOS}",
         "-e", f"GPIO_BACKEND={GPIO_BACKEND}",
-        "-e", f"BUILD_DIR={BUILD_DIR}",
+        "-e", f"BUILD_DIR={_container_path(BUILD_DIR)}",
         "-e", f"GEN={GEN}",
-        "-e", f"TOOLCHAIN={TOOLCHAIN}",
+        "-e", f"TOOLCHAIN={_container_path(TOOLCHAIN)}",
         "-e", f"APPLY_PATCHES={APPLY_PATCHES}",
         IMG, "bash", "-lc", inline,
     ])
@@ -196,7 +285,7 @@ cmake -S tests/gpio -B "$TEST_BUILD" -G "$GEN"
 cmake --build "$TEST_BUILD"
 """
     run(_docker_base() + [
-        "-e", f"TEST_BUILD={tbuild}",
+        "-e", f"TEST_BUILD={_container_path(tbuild)}",
         "-e", f"GEN={GEN}",
         IMG, "bash", "-lc", inline,
     ])
@@ -214,7 +303,7 @@ def do_test() -> None:
 ctest --test-dir "$TEST_BUILD" --output-on-failure
 """
     run(_docker_base() + [
-        "-e", f"TEST_BUILD={tbuild}",
+        "-e", f"TEST_BUILD={_container_path(tbuild)}",
         IMG, "bash", "-lc", inline,
     ])
     log(f"[devops] 容器内测试完成（{BOARD}）")
@@ -311,10 +400,12 @@ def do_shell() -> None:
         die("[devops] shell 需要交互式终端（-it）。请在前台终端中执行：python3 tools/devops.py shell")
 
     ensure_image()
-    log(f"[devops] 进入容器 shell：{IMG}（工程挂载于容器内 {ROOT}）")
+    if RTOS == "rt-thread":
+        provision_rtos_cmake()
+    log(f"[devops] 进入容器 shell：{IMG}（工程挂载于容器内 {_container_path(ROOT)}）")
     log("[devops] 容器内仅用于编译/排查；烧录(DAP)请在宿主机执行。退出用 exit")
     run(["docker", "run", "--rm", "-it", *docker_user_args(),
-         "-v", f"{ROOT}:{ROOT}", "-w", str(ROOT), IMG, "bash"])
+         "-v", f"{ROOT}:{_container_path(ROOT)}", "-w", _container_path(ROOT), IMG, "bash"])
 
 
 # ---- 烧录（宿主机 openocd）----
@@ -404,27 +495,29 @@ def flash(args: list) -> None:
     else:
         die(f"[devops] 未知烧录器: {flasher}（支持: stlink / dap / isp）")
 
+    # openocd 在宿主机运行：路径统一转正斜杠，避免 Windows 反斜杠在 Tcl 命令里被当转义。
+    config = _posix_path(config)
+    ocd_cmd = _openocd_cmd()
+
     log(f"[devops] 烧录器={flasher}，烧录 {bin_path} ...")
     is_dap = flasher in ("dap", "cmsis-dap", "cmsis")
     if is_dap:
         if flash_auto_run:
             # RESET_MODE=srst：尝试烧完后硬件复位运行（依赖 DAP nRST 正常接通）
             log("[devops] RESET_MODE=srst：烧完后自动硬件复位运行（需 DAP nRST 接通）")
-            run(["openocd", "-f", config, *extra_args, *gdb_args,
-                 "-c", f"program {bin_path} 0x08000000 verify reset exit"])
-            log("[devops] 烧录完成。固件已尝试自动复位运行。")
+            run([*ocd_cmd, "-f", config, *extra_args, *gdb_args,
+                 "-c", f"program {_posix_path(bin_path)} 0x08000000 verify reset exit"])
+            log("[devops] 烧录成功")
         else:
             # 默认（推荐）：只写 Flash+校验，不碰复位（DAP 的 reset 会把芯片带进 ROM BootLoader）。
-            run(["openocd", "-f", config, *gdb_args,
-                 "-c", f"program {bin_path} 0x08000000 verify exit"])
-            log("[devops] 烧录完成(写Flash+校验OK)。固件已就绪，尚未启动。")
-            log("[devops] 现在请按一下【板上 RESET 键】(或断电上电)，固件将从主 Flash")
-            log("[devops] 干净启动并连续输出 heartbeat。")
+            run([*ocd_cmd, "-f", config, *gdb_args,
+                 "-c", f"program {_posix_path(bin_path)} 0x08000000 verify exit"])
+            log("[devops] 烧录成功")
     else:
         # stlink：program ... verify reset exit 烧完自动复位运行，等于 MDK Reset and Run
-        run(["openocd", "-f", config, *extra_args, *gdb_args,
-             "-c", f"program {bin_path} 0x08000000 verify reset exit"])
-        log("[devops] 烧录完成。固件已自动复位运行。")
+        run([*ocd_cmd, "-f", config, *extra_args, *gdb_args,
+             "-c", f"program {_posix_path(bin_path)} 0x08000000 verify reset exit"])
+        log("[devops] 烧录成功")
 
 
 # ---- 用调试器强制目标从主 Flash 重启运行 ----
@@ -494,12 +587,13 @@ def reboot(args: list) -> None:
     sp, reset = struct.unpack("<II", head)
 
     log(f"[devops] reboot：强制从 {bin_path} 的 Reset(0x{reset:08X}) 重新运行（sp=0x{sp:08X}），多试几次以稳过 DAP 时序...")
+    ocd_cmd = _openocd_cmd()
     speeds = [100, 400, 1000]
     for attempt in range(1, 11):
         kill_openocd()  # 清掉上一次可能残留的 openocd，避免同一时刻抢同一个调试器
         time.sleep(0.4)
         spd = speeds[(attempt - 1) % len(speeds)]
-        cmd = ["openocd", "-f", config,
+        cmd = [*ocd_cmd, "-f", config,
                "-c", "gdb_port 0", "-c", f"adapter speed {spd}",
                "-c", "init", "-c", "halt",
                "-c", f"reg sp 0x{sp:08X}", "-c", f"reg pc 0x{reset:08X}",
