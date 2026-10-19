@@ -21,12 +21,17 @@
 - **port/<os>**：把 OSAL 接口映射到具体 RTOS（当前为 RT-Thread），每一套适配层是独立的。
 - 换 RTOS 时，只需在 `rtos/` 挂新内核、新增一套 `osal/port/<os>/` 实现，顶层 `-DRTOS=` 切换。
 
-## 2. 硬件假设（默认 Blue Pill 板）
+## 2. 硬件假设（默认目标板：正点原子战舰 STM32F103 V4）
 
 - 系统时钟：内部 HSI **8MHz**（不依赖外部晶振，便于通用跑通）
 - UART1 `PA9(TX)`：`115200-8-N-1`，作 `rt_kprintf`/`osal_printf` 控制台输出
-- 板载 LED：`PC13`（低电平点亮），示例 `led` 模块默认使用
-- Flash 64KB / SRAM 20KB：如需更大容量芯片，同步修改 `bsp/board.h` 与 `bsp/stm32f103/stm32f103.ld`
+- 板载 LED：`DS0 → PB5`（红）、`DS1 → PE5`（绿），均为**低电平点亮**
+- 板载按键：`KEY0 → PE4`、`KEY1 → PE3`、`KEY2 → PE2`（按下接地，低有效）、
+  `WK_UP → PA0`（按下接 3.3V，高有效）；`key` 模块内部统一开上/下拉，不依赖板上外部上拉
+- Flash 512KB / SRAM 64KB：换其它容量芯片时同步修改 `bsp/stm32f103/board.h` 与 `bsp/stm32f103/stm32f103.ld`
+
+> 上表是 `modules/led`、`modules/key` 里那张引脚映射表的依据（由原理图 LED / KEY 块得出，
+> 见 `docs/gpio.md` 的 host 单测如何把这套极性钉死）。
 
 ## 3. 切换到 Zephyr
 

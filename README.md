@@ -16,7 +16,7 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 | 目录 | 作用 | 详见 |
 |------|------|------|
 | `applications/` | 应用主程序 `main.c`，系统级初始化与编排 | `docs/modules.md` |
-| `modules/` | 业务模块（led、hello …）及中间件 / 协议栈，只依赖 OSAL | `docs/modules.md` |
+| `modules/` | 业务模块（led、key、hello …）及中间件 / 协议栈，只依赖 OSAL | `docs/modules.md` |
 | `drivers/` | 外设驱动组件（每个外设一个目录） | — |
 | `drivers/gpio/` | GPIO 接口 + 三种后端实现 | `docs/gpio.md` |
 | `bsp/` | RTOS 配置 `rtconfig.h` + CMake 入口 | — |

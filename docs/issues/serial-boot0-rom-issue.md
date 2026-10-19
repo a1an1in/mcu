@@ -180,7 +180,8 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\a1an1in\workspace\mcu\tools\s
 
 把**所有占用 COM4 的程序**（脚本 / MobaXterm / 串口助手）全部关掉，再按板子 **RESET** —— 就回 Flash 正常启动了。**不需要调试器。**
 
-## 7. 两个容易踩的坑
+## 7. 三个容易踩的坑
 
-- **"LED 不亮"不能说明板子没跑。** 本工程 LED 模块从未被调用（`led_init()` 没有调用者，且 `LED_PIN` 还停在 Blue Pill 的 `PC13`，不是战舰板的 `PB5/PE5`）。判断死活请看 UART1（COM4）有没有启动横幅。
+- **"LED 不亮"不能说明板子没跑。** 本工程启动横幅走的是 UART1（COM4），不是 LED；LED 只在应用主动点亮时才亮。当前 `applications/main.c` 里挂了一个硬件自测线程（`led_init()` + `key_init()`：KEY0/KEY1 按住点亮对应 LED，KEY2 切换两灯交替闪，见 `docs/gpio.md`），它跑起来才会亮。判断死活仍请看串口有没有启动横幅。
+- **串口中文全变成 `?`。** 固件打印的是 **UTF-8**，而 `System.IO.Ports.SerialPort` 的 `Encoding` 默认是 **ASCII**，会把每个 ≥0x80 的字节替换成 `?`（一个汉字 3 字节 → 3 个 `?`）。用 `tools/serial-mon.ps1` 时已默认 `-Charset utf8`；自己写代码记得 `sp.Encoding = [Text.Encoding]::UTF8`。
 - 排错顺序：先看串口有没有启动横幅 → 没有就先怀疑 BOOT0 / 串口工具的 DTR/RTS → 最后才怀疑固件。

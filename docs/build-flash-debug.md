@@ -67,8 +67,9 @@ python3 tools/devops.py build --rtos zephyr
 | `DOCKERFILE` | `docker/Dockerfile` | Dockerfile 路径 |
 
 > **单元测试**（与编译共用**同一镜像**，镜像含宿主 gcc 与交叉工具链）分两步：
-> ① 编译 host 单测程序：`python3 tools/devops.py build --host`（或 `--test`，宿主 gcc 把 `tests/gpio`
->    编成 x86 程序，产物在 `build/<BOARD>/rt-thread/tests/`，**不运行**）；
+> ① 编译 host 单测程序：`python3 tools/devops.py build --host`（或 `--test`，宿主 gcc 把 `tests/`
+>    下的 `gpio/`（三后端接口一致性）与 `hw/`（模块行为，如「按 KEY1 点亮 DS0」）编成 x86 程序，
+>    产物在 `build/<BOARD>/rt-thread/tests/{gpio,hw}/`，**不运行**）；
 > ② 运行断言：`python3 tools/devops.py test`（只运行已编译好的单测，不重新编译）。
 
 ## 3. 烧录（刷包）
