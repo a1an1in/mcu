@@ -43,6 +43,7 @@ target_sources(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../applications/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/hello/hello.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/led/led.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/key/key.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/gpio/zephyr_gpio.c
     ${OSAL_Z}/osal_thread.c
     ${OSAL_Z}/osal_sem.c
@@ -58,5 +59,6 @@ zephyr_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../osal/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/hello
     ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/led
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/key
     ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/gpio
 )

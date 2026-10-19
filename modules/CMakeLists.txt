@@ -8,6 +8,7 @@
 add_library(modules OBJECT
     hello/hello.c
     led/led.c
+    key/key.c
 )
 
 # 模块需要 OSAL 与 driver 头文件

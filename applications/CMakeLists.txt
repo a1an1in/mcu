@@ -12,10 +12,11 @@
 
 add_library(applications OBJECT main.c)
 
-# include 各模块头（hello.h / led.h 等）
+# include 各模块头（hello.h / led.h / key.h 等）
 target_include_directories(applications PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/hello
     ${CMAKE_SOURCE_DIR}/modules/led
+    ${CMAKE_SOURCE_DIR}/modules/key
 )
 
 target_link_libraries(applications PRIVATE modules osal)
