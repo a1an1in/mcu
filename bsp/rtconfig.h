@@ -32,6 +32,7 @@
 /* ===== 内核扩展 ===== */
 #define RT_USING_DEBUG
 #define RT_DEBUGING_ASSERT
+#define RT_DEBUGING_INIT           /* 打印每个 RT-Thread 组件自动初始化的名字 */
 
 /* ===== 线程间通信 ===== */
 #define RT_USING_SEMAPHORE
@@ -59,6 +60,12 @@
 #define RT_USING_USER_MAIN
 #define RT_MAIN_THREAD_STACK_SIZE  4096
 #define RT_MAIN_THREAD_PRIORITY    10
+
+/* ===== FINSH Shell（msh 交互式命令行）===== */
+#define RT_USING_COMPONENTS_INIT   /* 启用 INIT_EXPORT 自动初始化 */
+#define RT_USING_FINSH             /* 启用 FINSH shell 组件 */
+#define FINSH_USING_MSH            /* 使用 msh 模式（交互式） */
+#define FINSH_USING_SYMTAB         /* 支持 MSH_CMD_EXPORT 导出命令表 */
 
 /* ===== 版本 & 调测 ===== */
 #define RT_VER_NUM               0x50202

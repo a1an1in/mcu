@@ -7,6 +7,7 @@
 set(RTT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(RTT_ARCH_DIR ${RTT_DIR}/libcpu/arm/cortex-m3)
 set(RTT_COMMON_DIR ${RTT_DIR}/libcpu/arm/common)
+set(RTT_FINSH_DIR ${RTT_DIR}/components/finsh)
 
 # -----------------------------------------------------------------------------
 # 内核核心源码（单核, !RT_USING_SMP）
@@ -42,6 +43,12 @@ set(RTT_KERNEL_SRCS
     # ARM 态，故软件除法交由编译器自带 libgcc 的 __aeabi_idiv 提供。）
     ${RTT_COMMON_DIR}/atomic_arm.c
     ${RTT_COMMON_DIR}/div0.c
+    # FINSH shell（RT_USING_FINSH）
+    ${RTT_FINSH_DIR}/shell.c
+    ${RTT_FINSH_DIR}/msh.c
+    ${RTT_FINSH_DIR}/msh_parse.c
+    ${RTT_FINSH_DIR}/msh_file.c
+    ${RTT_FINSH_DIR}/cmd.c
 )
 
 # 创建内核静态库（必须先 add_library，才能对其设置 include 路径）
@@ -54,6 +61,7 @@ target_include_directories(rtt_kernel PUBLIC
     ${RTT_DIR}/include
     ${RTT_ARCH_DIR}
     ${RTT_COMMON_DIR}
+    ${RTT_FINSH_DIR}
     ${CMAKE_SOURCE_DIR}/bsp          # 提供 rtconfig.h
 )
 

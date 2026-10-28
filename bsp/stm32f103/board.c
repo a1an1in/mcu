@@ -89,7 +89,84 @@ static unsigned long rcc_pclk2_hz(void)                   /* PCLK2 = APB2 */
     return rcc_ahb_hz() / ppre2_div[div];
 }
 
-/* ================= UART1（控制台输出） ================= */
+/* ================= UART1（控制台） ================= */
+#define NVIC_ISER1      (*(volatile unsigned long *)(0xE000E104u))
+
+/* USART_SR 位定义（RM0008，STM32F1 参考手册）：
+ *   bit0=PE  bit1=FE  bit2=NE  bit3=ORE  bit4=IDLE  bit5=RXNE  bit6=TC  bit7=TXE
+ * 注意 RXNE 是 bit5 而不是 bit0。写成 bit0 会读不到 DR，RXNE 永不清零，
+ * 电平触发的 USART 中断就会无限重入，把 CPU 卡死在 ISR 里（表现为打印完
+ * "msh >" 后一按键盘系统就死）。 */
+#define USART_SR_PE     (0x1u << 0)
+#define USART_SR_FE     (0x1u << 1)
+#define USART_SR_NE     (0x1u << 2)
+#define USART_SR_ORE    (0x1u << 3)
+#define USART_SR_RXNE   (0x1u << 5)
+#define USART_SR_TXE    (0x1u << 7)
+
+/* RX 环形缓冲 + 信号量（FINSH shell 输入用） */
+#define RX_BUF_SIZE 64
+static unsigned char  rx_ring[RX_BUF_SIZE];
+static volatile int   rx_head = 0;
+static volatile int   rx_tail = 0;
+static rt_sem_t       rx_sem  = RT_NULL;
+
+static void uart1_rx_init(void)
+{
+    rx_sem = rt_sem_create("urx", 0, RT_IPC_FLAG_FIFO);
+    USART1_CR1 |= (0x1u << 5);   /* RXNEIE = bit5：开 RX 中断 */
+    NVIC_ISER1 = (0x1u << 5);    /* USART1 IRQ=37 → ISER1 bit5 (37-32=5) */
+}
+
+void USART1_IRQHandler(void)
+{
+    unsigned long sr;
+    unsigned char c;
+
+    rt_interrupt_enter();
+
+    sr = USART1_SR;
+
+    /* RXNE / ORE / FE / NE / PE 任一置位都必须「先读 SR、再读 DR」把标志清掉。
+     * 电平触发的中断只要源不清，就会不停重入，其它线程全部饿死。 */
+    if (sr & (USART_SR_RXNE | USART_SR_ORE | USART_SR_FE | USART_SR_NE | USART_SR_PE))
+    {
+        c = (unsigned char)(USART1_DR & 0xFFu);   /* 读 DR 清 RXNE/ORE/FE/NE/PE */
+
+        if (sr & USART_SR_RXNE)                   /* 只有真正收到数据才入队 */
+        {
+            int next = (rx_head + 1) % RX_BUF_SIZE;
+            if (next != rx_tail)
+            {
+                rx_ring[rx_head] = c;
+                rx_head = next;
+                rt_sem_release(rx_sem);           /* 唤醒阻塞的 getchar */
+            }
+        }
+    }
+
+    rt_interrupt_leave();
+}
+
+/* FINSH shell 读字节：缓冲空就阻塞等信号量（中断 release）
+ * 这才是正确的中断驱动模式——shell 线程 sleep 在信号量上，不抢 CPU */
+signed char rt_hw_console_getchar(void)
+{
+    /* 先试非阻塞读缓冲 */
+    if (rx_tail != rx_head)
+    {
+        signed char c = (signed char)rx_ring[rx_tail];
+        rx_tail = (rx_tail + 1) % RX_BUF_SIZE;
+        return c;
+    }
+    /* 缓冲空 → 阻塞等中断 release 信号量 */
+    rt_sem_take(rx_sem, RT_WAITING_FOREVER);
+    /* 被唤醒了，再读一次 */
+    signed char c = (signed char)rx_ring[rx_tail];
+    rx_tail = (rx_tail + 1) % RX_BUF_SIZE;
+    return c;
+}
+
 static void uart1_init(void)
 {
     unsigned long brr;
@@ -100,11 +177,14 @@ static void uart1_init(void)
     /* PA9 = TX：推挽 + 复用输出，50MHz（CRH 引脚9，CNF=10, MODE=11 → 0b1011） */
     GPIOA_CRH = (GPIOA_CRH & ~(0x0Fu << 4)) | (0x0Bu << 4);
 
-    /* 波特率：BRR = PCLK2(实际APB2) / 115200，与系统时钟方案无关，恒为精确 115200 */
+    /* PA10 = RX：浮空输入（CRH 引脚10，CNF=01, MODE=00 → 0b0100） */
+    GPIOA_CRH = (GPIOA_CRH & ~(0x0Fu << 8)) | (0x04u << 8);
+
+    /* 波特率 */
     brr = (rcc_pclk2_hz() + (UART_BAUD / 2u)) / UART_BAUD;
     USART1_BRR = (unsigned long)brr;
 
-    /* UE=13, TE=3, RE=2 */
+    /* UE=13, TE=3, RE=2（RXNEIE 在 uart1_rx_init 里单独开） */
     USART1_CR1 = (0x1u << 13) | (0x1u << 3) | (0x1u << 2);
 }
 
@@ -112,10 +192,10 @@ static void uart1_putc(char c)
 {
     if (c == '\n')
     {
-        while ((USART1_SR & (0x1u << 7)) == 0u) { }
+        while ((USART1_SR & USART_SR_TXE) == 0u) { }
         USART1_DR = (unsigned long)'\r';
     }
-    while ((USART1_SR & (0x1u << 7)) == 0u) { }
+    while ((USART1_SR & USART_SR_TXE) == 0u) { }
     USART1_DR = (unsigned long)c;
 }
 
@@ -187,4 +267,7 @@ void rt_hw_board_init(void)
 #ifdef RT_USING_HEAP
     rt_system_heap_init(HEAP_BEGIN, HEAP_END);
 #endif
+
+    /* FINSH shell UART RX：必须在 heap_init 之后（rt_sem_create 需要 rt_malloc） */
+    uart1_rx_init();
 }

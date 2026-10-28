@@ -30,8 +30,13 @@ g_pfnVectors:
     .word   0                             /* Reserved */
     .word   PendSV_Handler                /* RT-Thread 提供 */
     .word   SysTick_Handler               /* bsp/board.c 提供 */
-    /* 外设中断（位于向量表偏移 +0x40 起），当前全部使用弱默认处理 */
-    .rept   60
+    /* 外设中断（IRQ0..59，共 60 个）—— USART1_IRQHandler 在 IRQ37 由 C 强定义 */
+    .globl  USART1_IRQHandler
+    .rept   37                 /* IRQ0..36 默认 */
+    .word   Default_Handler
+    .endr
+    .word   USART1_IRQHandler  /* IRQ37 = USART1（FINSH shell 接收）*/
+    .rept   22                 /* IRQ38..59 默认 */
     .word   Default_Handler
     .endr
 

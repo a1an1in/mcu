@@ -122,7 +122,10 @@ add_executable(stm32f103.elf
 )
 target_link_libraries(stm32f103.elf
     PRIVATE
-    ${RTOS_KERNEL_TARGET}   # 由 rtos 后端定义链接依赖项
+    # --whole-archive 整个内核库：让链接器拉进所有 .o（含 FINSH 的 .rti_fn.* INIT section
+    # 和 FSymTab 命令表），否则链接器只 pull 被直接引用的 .o，FINSH shell.o 因 INIT_EXPORT
+    # 机制是运行期自动调用、无编译期显式引用，会被 --gc-sections 丢弃。
+    -Wl,--whole-archive ${RTOS_KERNEL_TARGET} -Wl,--no-whole-archive
 )
 target_link_options(stm32f103.elf
     PRIVATE -T ${BSP_LINK_SCRIPT}
