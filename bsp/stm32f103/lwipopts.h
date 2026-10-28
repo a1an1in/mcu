@@ -16,8 +16,13 @@
 /* ---------- errno：没有 newlib/POSIX，用 lwip 自带的定义 ----------
  * 注意不能写 LWIP_ERRNO_INCLUDE "lwip/errno.h"：lwip/errno.h 会反过来
  * include 这个宏，自我包含被头文件保护挡住，结果一个 errno 都没有。
- * LWIP_PROVIDE_ERRNO=1 时由 lwip/errno.h 定义整套常量（ENXIO/EAFNOSUPPORT…），
- * 并在 lwip_glue.c 里提供 `int errno;` 的定义。 */
+ * LWIP_PROVIDE_ERRNO=1 时由 lwip/errno.h 定义整套常量（ENXIO/EAFNOSUPPORT…）。
+ *
+ * 关于 errno 变量本身：lwip/errno.h 只声明 `extern int errno;`。当前工程里
+ * 没有任何编译单元引用它（`nm librtt_kernel.a | grep -w errno` 为 0），所以
+ * 不需要定义，删掉定义后链接产物字节数不变。若将来启用会写 errno 的路径
+ * （如 LWIP_SOCKET_SET_ERRNO / BSD socket 超时），链接会报
+ * `undefined reference to 'errno'`，届时在 board.c 里加一行 `int errno;` 即可。 */
 #define LWIP_PROVIDE_ERRNO    1
 
 /* ---------- 格式串宏 ---------- */

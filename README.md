@@ -17,10 +17,12 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 |------|------|------|
 | `applications/` | 应用主程序 `main.c`，系统级初始化与编排 | `docs/modules.md` |
 | `modules/` | 业务模块（led、key、hello …）及中间件 / 协议栈，只依赖 OSAL | `docs/modules.md` |
-| `drivers/` | 外设驱动组件（每个外设一个目录） | — |
+| `drivers/` | 外设驱动组件（每个外设一个目录，器件/芯片/OS 三层拆分） | `docs/drivers.md` |
 | `drivers/gpio/` | GPIO 接口 + 三种后端实现 | `docs/gpio.md` |
-| `bsp/` | RTOS 配置 `rtconfig.h` + CMake 入口 | — |
-| `bsp/stm32f103/` | 板级/芯片：`board.c/.h`、startup 汇编、链接脚本 | `docs/build-flash-debug.md` |
+| `drivers/uart/` | UART 接口 + 寄存器收发 + RT-Thread 控制台设备 | `docs/drivers.md` |
+| `drivers/net/` | 网络驱动（CH395Q：SPI + MACRAW + lwIP） | `docs/drivers.md` |
+| `bsp/` | 板卡分派入口（`CMakeLists.txt`）；每块板的配置在其子目录 | `docs/architecture.md` |
+| `bsp/stm32f103/` | 这块板的全部内容：`rtconfig.h`、`lwipopts.h`、`board.c/.h`、startup 汇编、链接脚本 | `docs/build-flash-debug.md` |
 | `rtos/rt-thread/` | RT-Thread 源码（submodule，v5.2.2）+ 纯 CMake 集成 | `docs/architecture.md` |
 | `rtos/zephyr/` | Zephyr 源码（submodule，4.4）——作为构建宿主 | `applications/zephyr/` |
 | `applications/zephyr/` | Zephyr 应用工程（`--rtos zephyr` 编译入口，复用 `applications/main.c`） | `applications/zephyr/README.md` |
@@ -40,6 +42,7 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 | [`docs/modules.md`](docs/modules.md) | 如何新增业务模块 |
 | [`docs/dependencies-patches.md`](docs/dependencies-patches.md) | 依赖维护与补丁策略 |
 | [`docs/gpio.md`](docs/gpio.md) | GPIO 三后端与测试 |
+| [`docs/drivers.md`](docs/drivers.md) | **驱动分层与目录约定**（器件/芯片/OS 三层、换板/换芯片/换 OS） |
 | [`docs/roadmap.md`](docs/roadmap.md) | 当前候选待办 |
 
 ## 一分钟上手

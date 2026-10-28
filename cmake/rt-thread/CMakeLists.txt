@@ -148,7 +148,7 @@ target_include_directories(rtt_kernel PUBLIC
     # netdev headers
     ${RTT_NETDEV_DIR}/include
     ${RTT_NETDEV_DIR}/include/arpa
-    ${CMAKE_SOURCE_DIR}/bsp          # 提供 rtconfig.h
+    ${CMAKE_SOURCE_DIR}/bsp/${BOARD}   # 提供 rtconfig.h / lwipopts.h（板级配置）
 )
 
 # lwIP 编译选项：避免某些 glibc 检查，我们用 klibc/nano

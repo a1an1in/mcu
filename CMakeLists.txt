@@ -60,7 +60,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/drivers/uart
     ${CMAKE_SOURCE_DIR}/drivers/net/ch395
     ${CMAKE_SOURCE_DIR}/drivers
-    ${CMAKE_SOURCE_DIR}/bsp
+    ${CMAKE_SOURCE_DIR}/bsp/${BOARD}
 )
 
 # -----------------------------------------------------------------------------
@@ -68,8 +68,8 @@ include_directories(
 # -----------------------------------------------------------------------------
 if(RTOS STREQUAL "rt-thread")
     set(RTOS_TYPE "rt-thread")
-    # rtconfig.h 由本工程 bsp 提供，覆盖 RT-Thread 内核默认行为
-    include_directories(${CMAKE_SOURCE_DIR}/bsp)
+    # rtconfig.h / lwipopts.h 由本工程 bsp/${BOARD} 提供，覆盖 RT-Thread / lwIP 默认行为
+    include_directories(${CMAKE_SOURCE_DIR}/bsp/${BOARD})
     add_subdirectory(rtos/rt-thread
                      ${CMAKE_BINARY_DIR}/rtos/rt-thread)
 elseif(RTOS STREQUAL "zephyr")

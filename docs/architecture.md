@@ -51,3 +51,21 @@ Zephyr 与 RT-Thread 的构建方式**根本不同**：Zephyr 是构建系统宿
 
 > FreeRTOS 接入方式与 RT-Thread 同属"源码可被 add_subdirectory"系，待后续按
 > RT-Thread 模板接入（本工程顶层 CMake 的 `freertos` 分支仍为占位）。
+
+## 4. 驱动分层（drivers/ 内部）
+
+`drivers/` 下每个外设组件都按「器件 / SoC / OS」三层拆分，板级事实由 BSP 提供：
+
+```text
+drivers/uart/
+├── uart.h                接口（芯片/OS 都无关）
+├── stm32f1_uart.c        芯片实现（寄存器收发，不含 OS 头）
+└── rtthread_uart.c       OS 适配（rt_device + rt_sem + 控制台）
+```
+
+- **依赖方向**：`bsp → drivers → osal`；驱动不 include `board.h`，芯片实现不 include OS 头
+- **换板子** → 改配置，不加文件；**换芯片** → 加 `stm32xx_<dev>.c`；**换 OS** → 加 `<os>_<dev>.c`
+- **构建期选择**：OS 适配文件跟随顶层 `-DRTOS=` 自动选中，不额外设手填开关
+
+完整约定（命名后缀、判断表、现状对照、新增驱动检查清单）见
+[`docs/drivers.md`](drivers.md)。
