@@ -63,7 +63,7 @@ python3 tools/devops.py build --rtos zephyr
 | `GEN` | `Ninja` | CMake 生成器 |
 | `TOOLCHAIN` | `cmake/toolchain-arm-none-eabi.cmake` | 交叉工具链文件（容器内） |
 | `TEST_BUILD` | `$ROOT/build/<BOARD>/rt-thread/tests` | 容器内 host 单测的构建目录（`build --host` 用） |
-| `IMG` | `stm32f103-toolchain:latest` | Docker 编译/测试共用镜像名 |
+| `IMG` | `stm32f103-dev:latest` | Docker 编译/测试共用镜像名 |
 | `DOCKERFILE` | `docker/Dockerfile` | Dockerfile 路径 |
 
 > **单元测试**（与编译共用**同一镜像**，镜像含宿主 gcc 与交叉工具链）分两步：
@@ -139,6 +139,9 @@ python3 tools/devops.py flash --flasher dap --bin ./tools/atk_f103.bin
 # Linux 下任选其一
 screen /dev/ttyUSB0 115200
 minicom -D /dev/ttyUSB0 -b 115200
+
+# windows 串口可以看启动日志
+powershell -ExecutionPolicy Bypass -File "C:\Users\a1an1in\workspace\mcu\tools\serial-mon.ps1" -Port COM4
 ```
 
 ### 4.2 OpenOCD + GDB 在线调试（推荐）

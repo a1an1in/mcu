@@ -63,7 +63,7 @@
   官方脚本 `python3 tools/devops.py`），烧录用 DAP 配置
   `tools/openocd-stm32f1-dap.cfg`（`interface/cmsis-dap.cfg` + `swd`）。
 - **修复/验证**：
-  - 构建：`python3 tools/devops.py build`（首次自动 `docker build` 出 `stm32f103-toolchain:latest`）。
+  - 构建：`python3 tools/devops.py build`（首次自动 `docker build` 出 `stm32f103-dev:latest`）。
   - 烧录：`python3 tools/devops.py flash --flasher dap` → **`Verified OK`**。
   - 宿主机另有 Xilinx 交叉工具链可作备用（非 PATH 内），但工程标准路径是 Docker。
 
@@ -261,7 +261,7 @@ arm-none-eabi-size  build/stm32f103/rt-thread/stm32f103
   ldr   r1, =0x08000000        /* 主 Flash 基址 */
   str   r1, [r0]
   ```
-- 构建方式：`python3 tools/devops.py build --clean`（Docker 容器 `stm32f103-toolchain` 内 `gcc-arm-none-eabi 13.2.1`）。
+- 构建方式：`python3 tools/devops.py build --clean`（Docker 容器 `stm32f103-dev` 内 `gcc-arm-none-eabi 13.2.1`）。
 - 反汇编铁证（`Reset_Handler` 起始，容器产物）：
   ```
   080012f0: f8df d034  ldr.w sp, [pc, #52]    ; sp = 0x20010000
@@ -275,7 +275,7 @@ arm-none-eabi-size  build/stm32f103/rt-thread/stm32f103
   段，被 ld 摆到 `0x08000000`、把向量表挤偏 0x24 字节；已在 `CMakeLists.txt` 的
   `add_link_options` 加 `-Wl,--build-id=none` 禁用（对容器 gcc 13.2.1 亦无害，纯防御）。
 - ⚠️ 教训：交叉编译**必须在 Docker 容器内进行**（`python3 tools/devops.py build`），工具链在
-  `stm32f103-toolchain` 镜像内（`/usr/bin/arm-none-eabi-gcc`）；曾误在宿主机用 Xilinx
+  `stm32f103-dev` 镜像内（`/usr/bin/arm-none-eabi-gcc`）；曾误在宿主机用 Xilinx
   petalinux SDK 工具链直接把路径固化进 `build/.../CMakeCache.txt` 的 `TOOLCHAIN_PATH`，
   导致容器内 cmake 找不到编译器。若再遇“compiler is not a full path”报错，用
   `python3 tools/devops.py build --clean` 清掉脏缓存重建即可。

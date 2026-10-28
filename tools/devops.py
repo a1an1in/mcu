@@ -32,7 +32,7 @@ TOOLCHAIN = _env("TOOLCHAIN", str(ROOT / "cmake/toolchain-arm-none-eabi.cmake"))
 GPIO_BACKEND = _env("GPIO_BACKEND", "stm32f1")
 # --rtos zephyr 时对应的 Zephyr 官方 board（主机可选择 STM32F103 系开发板）
 ZEPHYR_BOARD = _env("ZEPHYR_BOARD", "stm32f103_mini")
-IMG = _env("IMG", "stm32f103-toolchain:latest")
+IMG = _env("IMG", "stm32f103-dev:latest")
 DOCKERFILE = _env("DOCKERFILE", str(ROOT / "docker/Dockerfile"))
 APPLY_PATCHES = _env("APPLY_PATCHES", "1")
 
