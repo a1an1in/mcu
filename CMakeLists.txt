@@ -57,6 +57,7 @@ add_link_options(-mcpu=cortex-m3 -mthumb -Wl,--gc-sections -Wl,--build-id=none -
 include_directories(
     ${CMAKE_SOURCE_DIR}/osal/include
     ${CMAKE_SOURCE_DIR}/drivers/gpio
+    ${CMAKE_SOURCE_DIR}/drivers/uart
     ${CMAKE_SOURCE_DIR}/drivers/net/ch395
     ${CMAKE_SOURCE_DIR}/drivers
     ${CMAKE_SOURCE_DIR}/bsp
@@ -116,6 +117,7 @@ endif()
 add_executable(stm32f103.elf
     $<TARGET_OBJECTS:board>
     $<TARGET_OBJECTS:gpio>
+    $<TARGET_OBJECTS:uart>
     $<TARGET_OBJECTS:ch395>
     $<TARGET_OBJECTS:osal>
     $<TARGET_OBJECTS:modules>
