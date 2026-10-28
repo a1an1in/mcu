@@ -111,6 +111,11 @@ static volatile int   rx_head = 0;
 static volatile int   rx_tail = 0;
 static rt_sem_t       rx_sem  = RT_NULL;
 
+#ifdef RT_USING_DEVICE
+/* 串口字符设备：FINSH 在 RT_USING_DEVICE 下只从设备取输入 */
+static struct rt_device s_uart1_dev;
+#endif
+
 static void uart1_rx_init(void)
 {
     rx_sem = rt_sem_create("urx", 0, RT_IPC_FLAG_FIFO);
@@ -140,6 +145,13 @@ void USART1_IRQHandler(void)
             {
                 rx_ring[rx_head] = c;
                 rx_head = next;
+#ifdef RT_USING_DEVICE
+                /* 通知设备层（FINSH 注册的 rx_indicate 会释放它的信号量） */
+                if (s_uart1_dev.rx_indicate != RT_NULL)
+                {
+                    s_uart1_dev.rx_indicate(&s_uart1_dev, 1);
+                }
+#endif
                 rt_sem_release(rx_sem);           /* 唤醒阻塞的 getchar */
             }
         }
@@ -208,6 +220,93 @@ void rt_hw_console_output(const char *str)
     }
 }
 
+#ifdef RT_USING_DEVICE
+/* ================= UART1 设备封装 =================
+ * 打开 RT_USING_DEVICE 后 finsh_getchar() 只从 shell->device 读数据
+ * （components/finsh/shell.c），而 shell 线程启动时会拿
+ * rt_console_get_device() 作为输入设备。板级此前只实现了
+ * rt_hw_console_output/getchar，没有注册任何设备，于是 shell->device
+ * 恒为 NULL —— 表现就是「能打印、打不进命令」。
+ * 这里把已有环形缓冲包成标准字符设备，并设为控制台。 */
+static rt_err_t uart1dev_init(rt_device_t dev)
+{
+    (void)dev;
+    return RT_EOK;
+}
+
+static rt_err_t uart1dev_open(rt_device_t dev, rt_uint16_t oflag)
+{
+    (void)dev;
+    (void)oflag;
+    return RT_EOK;
+}
+
+static rt_err_t uart1dev_close(rt_device_t dev)
+{
+    (void)dev;
+    return RT_EOK;
+}
+
+/* 非阻塞读：缓冲区空就返回 0，由 finsh 的信号量负责等待 */
+static rt_ssize_t uart1dev_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size)
+{
+    rt_size_t n = 0;
+    char *p = (char *)buffer;
+
+    (void)dev;
+    (void)pos;
+
+    while (n < size && rx_tail != rx_head)
+    {
+        p[n++] = (char)rx_ring[rx_tail];
+        rx_tail = (rx_tail + 1) % RX_BUF_SIZE;
+    }
+
+    return n;
+}
+
+static rt_ssize_t uart1dev_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size)
+{
+    const char *p = (const char *)buffer;
+    rt_size_t i;
+
+    (void)dev;
+    (void)pos;
+
+    for (i = 0; i < size; i++)
+    {
+        uart1_putc(p[i]);
+    }
+
+    return size;
+}
+
+static rt_err_t uart1dev_control(rt_device_t dev, int cmd, void *args)
+{
+    (void)dev;
+    (void)cmd;
+    (void)args;
+    return RT_EOK;
+}
+
+static void uart1_dev_register(void)
+{
+    s_uart1_dev.type    = RT_Device_Class_Char;
+    s_uart1_dev.init    = uart1dev_init;
+    s_uart1_dev.open    = uart1dev_open;
+    s_uart1_dev.close   = uart1dev_close;
+    s_uart1_dev.read    = uart1dev_read;
+    s_uart1_dev.write   = uart1dev_write;
+    s_uart1_dev.control = uart1dev_control;
+
+    rt_device_register(&s_uart1_dev, "uart1",
+                       RT_DEVICE_FLAG_RDWR | RT_DEVICE_FLAG_INT_RX | RT_DEVICE_FLAG_STREAM);
+
+    /* 设为控制台：rt_kprintf 走本设备，finsh 也会自动把它当输入源 */
+    rt_console_set_device("uart1");
+}
+#endif /* RT_USING_DEVICE */
+
 /* ================= 启动延时（马赛对齐 Zephyr CONFIG_BOOT_DELAY=3000） ================= */
 static void boot_delay_ms(unsigned int ms)
 {
@@ -270,4 +369,8 @@ void rt_hw_board_init(void)
 
     /* FINSH shell UART RX：必须在 heap_init 之后（rt_sem_create 需要 rt_malloc） */
     uart1_rx_init();
+
+#ifdef RT_USING_DEVICE
+    uart1_dev_register();
+#endif
 }

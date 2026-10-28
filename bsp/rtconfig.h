@@ -67,6 +67,39 @@
 #define FINSH_USING_MSH            /* 使用 msh 模式（交互式） */
 #define FINSH_USING_SYMTAB         /* 支持 MSH_CMD_EXPORT 导出命令表 */
 
+/* ===== 网络：lwIP v2.1.2 + netdev ===== */
+#define RT_USING_LWIP              /* 启用 lwIP TCP/IP 协议栈 */
+#define RT_USING_DEVICE            /* 让 rt_device_t 有定义（sys_arch.c/ethernetif.h 需要） */
+#define RT_USING_LWIP_VER_NUM  0x20102  /* lwIP 版本 = v2.1.2 */
+#define RT_LWIP_TCP                1
+#define RT_LWIP_UDP                1
+#define RT_LWIP_RAW                1
+#define RT_LWIP_ICMP               1
+#define RT_LWIP_DHCP               1
+#define RT_LWIP_DNS                1
+#define RT_USING_NETDEV            /* 启用 RT-Thread netdev 抽象 */
+#define NETDEV_IPV4                1   /* netdev_ipaddr.h 靠这两个宏选 IPv4/IPv6 分支 */
+#define NETDEV_IPV6                0
+#define NETDEV_USING_IFCONFIG      /* 启用 ifconfig 命令 */
+#define NETDEV_USING_PING          /* 启用 ping 命令 */
+#define NETDEV_USING_NETSTAT       /* 启用 netstat 命令 */
+#define RT_LWIP_PBUF_NUM           16
+#define RT_LWIP_RAW_PCB_NUM        2
+#define RT_LWIP_UDP_PCB_NUM        4
+#define RT_LWIP_TCP_PCB_NUM        4
+#define RT_LWIP_TCP_SND_BUF        (2 * TCP_MSS)
+#define RT_LWIP_TCP_WND            (2 * TCP_MSS)
+#define RT_MEMP_NUM_NETCONN        4
+#define RT_LWIP_TCPTHREAD_PRIORITY 12
+#define RT_LWIP_TCPTHREAD_MBOX_SIZE 8
+#define RT_LWIP_TCPTHREAD_STACKSIZE 2048
+/* erx/etx 线程（ethernetif.c 里创建）。不定义时 port 会退化成 0x90=144，
+ * 超过 RT_THREAD_PRIORITY_MAX(32)，rt_thread_init 直接断言挂掉。
+ * 取 13：比 tcpip(12) 略低，收到包先让协议栈跑。 */
+#define RT_LWIP_ETHTHREAD_PRIORITY  13
+/* 打开 netdev 的 ping 实现（否则 ping 命令表项是 NULL） */
+#define RT_LWIP_USING_PING
+
 /* ===== 版本 & 调测 ===== */
 #define RT_VER_NUM               0x50202
 #define RT_BACKTRACE_LEVEL_MAX_NR 16

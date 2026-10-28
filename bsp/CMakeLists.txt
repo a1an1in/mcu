@@ -9,7 +9,7 @@
 if(BOARD STREQUAL "stm32f103")
     set(BSP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/stm32f103)
 
-    add_library(board OBJECT ${BSP_DIR}/board.c)
+    add_library(board OBJECT ${BSP_DIR}/board.c ${BSP_DIR}/lwip_glue.c)
     # board 需要内核头（rtthread.h、rthw.h）、rtconfig.h（bsp 顶层）与 board.h（本目录）
     target_include_directories(board PUBLIC
         ${CMAKE_SOURCE_DIR}/bsp
