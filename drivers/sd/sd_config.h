@@ -63,9 +63,14 @@
 #endif
 
 /* 数据传输阶段时钟。SDIO 的 CK = HCLK / (CLKDIV + 2)，驱动会取不超过本值的
- * 最接近分频。SDSC 卡上限 25MHz，SDHC 可到 50MHz；这里取 12MHz 留余量。 */
+ * 最接近分频。
+ *
+ * 取 24MHz：SD 默认速率模式的规范上限是 25MHz，24MHz 在 72MHz 主频下正好
+ * 整除（/3）。实测这张 SanDisk SD64G 在 4 位 + 24MHz 下读写都稳定。
+ * 注意这要求 CPU 跟得上：4 位 24MHz = 12MB/s，FIFO 轮询循环必须够快
+ * （本工程 -O2 + 72MHz 有足够余量；如果换到很慢的主频，把这个值调小）。 */
 #ifndef SD_TRANSFER_CLOCK_HZ
-#define SD_TRANSFER_CLOCK_HZ 12000000u
+#define SD_TRANSFER_CLOCK_HZ 24000000u
 #endif
 
 #endif /* DRIVERS_SD_CONFIG_H__ */

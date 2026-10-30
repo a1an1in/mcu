@@ -68,7 +68,8 @@ static void sd_usage(void)
                "  sd info                 识别卡并打印信息\n"
                "  sd read  <lba> [cnt]    读块，例: sd read 0 2\n"
                "  sd write <lba> <hex...> 写一个块（会覆盖原内容）\n"
-               "  sd test                 末块写入并读回（会覆盖该块）\n");
+               "  sd test                 末块写入并读回（会覆盖该块）\n"
+               "  sd clock <khz>          运行时改 SDIO 时钟（扫频率用）\n");
 }
 
 /* ================= info ================= */
@@ -211,6 +212,42 @@ static void sd_do_write(int argc, char **argv)
     rt_kprintf("已写入 LBA %u（前 %d 字节有数据，其余为 0）\n", (unsigned int)lba, n);
 }
 
+/* ================= clock ================= */
+
+static void sd_do_clock(int argc, char **argv)
+{
+    struct sd_card *card = sd_handle();
+    uint32_t khz;
+    int ret;
+
+    if (card == NULL)
+    {
+        return;
+    }
+    if (argc < 1)
+    {
+        rt_kprintf("用法: sd clock <khz>\n    例: sd clock 1000（1MHz）\n");
+        return;
+    }
+
+    khz = (uint32_t)strtoul(argv[0], NULL, 0);
+    if (khz == 0u)
+    {
+        rt_kprintf("khz 不能为 0\n");
+        return;
+    }
+
+    ret = sd_set_clock(card, khz * 1000u);
+    if (ret != 0)
+    {
+        rt_kprintf("设置失败: %s(%d)\n", sd_err_str(ret), ret);
+        return;
+    }
+    rt_kprintf("SDIO 时钟请求 %u kHz（实际取不超过它的最接近分频）\n",
+               (unsigned int)khz);
+    rt_kprintf("  接着用 sd read 0 1 / sd test 验证这一档\n");
+}
+
 /* ================= test ================= */
 
 static void sd_do_test(int argc, char **argv)
@@ -297,6 +334,10 @@ static void sd(int argc, char **argv)
     else if (strcmp(sub, "write") == 0)
     {
         sd_do_write(argc - 2, &argv[2]);
+    }
+    else if (strcmp(sub, "clock") == 0)
+    {
+        sd_do_clock(argc - 2, &argv[2]);
     }
     else if (strcmp(sub, "test") == 0)
     {

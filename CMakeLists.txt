@@ -44,7 +44,10 @@ set(CMAKE_SYSTEM_PROCESSOR arm)
 # -----------------------------------------------------------------------------
 # 全局编译选项
 # -----------------------------------------------------------------------------
-add_compile_options(-mcpu=cortex-m3 -mthumb -Wall -ffunction-sections -fdata-sections)
+# -O2：不能省。之前没设优化（实际 -O0），SDIO 这类「轮询 FIFO」的循环在 -O0 下
+# 慢十倍，4 位总线 4MHz 时数据率 2MB/s，接收循环跟不上就 RXOVERR（1 位 400kHz
+# 能过、4MHz 过不了就是这个原因）。顺带网络、usb 等吞吐也跟着受益。
+add_compile_options(-mcpu=cortex-m3 -mthumb -O2 -Wall -ffunction-sections -fdata-sections)
 add_compile_options($<$<COMPILE_LANGUAGE:C>:-std=gnu11>)
 # --build-id=none：禁用 GNU build-id。部分 GCC（如 Xilinx arm-none-eabi 10.2）默认
 # 生成 .note.gnu.build-id 段，因链接脚本未给该段指定位置，会被 ld 摆到 0x08000000，

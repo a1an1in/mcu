@@ -106,6 +106,10 @@ int sd_parse_csd(const uint8_t csd[16], uint64_t *capacity, uint32_t *block_size
 /* 从 CID 解析厂商 / 产品名 / 序列号 / 日期。返回 0 / SD_ERR_PARAM。 */
 int sd_parse_cid(const uint8_t cid[16], struct sd_cid *info);
 
+/* 运行时改 SDIO 时钟（调试用）。hz 会被 SoC 层取成不超过它的最接近分频。
+ * 返回 0 / SD_ERR_*。用于扫「这块板/这张卡能跑到多少」。 */
+int sd_set_clock(struct sd_card *card, uint32_t hz);
+
 /* ============================ 默认实例 ============================ */
 void sd_set_default(struct sd_card *card);
 struct sd_card *sd_get_default(void);

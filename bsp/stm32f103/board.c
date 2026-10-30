@@ -34,7 +34,13 @@
 #define UART_BAUD       115200u
 #define BOARD_I2C_BUS_NR 0u     /* stm32f1_i2c_gpio_init() 固定把这条总线注册成 0 */
 #define RCC_BASE        0x40021000u
+#define RCC_CR          (*(volatile unsigned long *)(RCC_BASE + 0x00u))
 #define RCC_CFGR        (*(volatile unsigned long *)(RCC_BASE + 0x04u))
+
+#define FLASH_ACR       (*(volatile unsigned long *)0x40022000u)
+#define FLASH_ACR_LATENCY_2  (2u << 0)
+#define FLASH_ACR_HALF_CYCLE (1u << 3)   /* 与预取互斥，72MHz 下不能开 */
+#define FLASH_ACR_PREFETCH   (1u << 4)
 
 #define SYSTICK_BASE    0xE000E010u
 #define SYSTICK_CTRL    (*(volatile unsigned long *)(SYSTICK_BASE + 0x00u))
@@ -51,6 +57,82 @@
  * 头注释默认"HSI 8MHz"，补丁后即使换成 HSE/PLL(72MHz) 也不会出现串口乱码/节拍偏快。 */
 #define HSI_CLOCK_HZ    8000000u   /* 内部高速时钟 */
 #define HSE_CLOCK_HZ    8000000u   /* 战舰V4 外部晶振 */
+
+/* ================= 系统时钟：HSE 8MHz × PLL9 = 72MHz =================
+ *
+ * 之前一直跑复位默认的 HSI 8MHz（只读 RCC_CFGR 推算，从没配过）。72MHz 能
+ * 让 SDIO 的 FIFO 轮询、网络、所有软件循环都宽裕 9 倍 —— 4 位 SD 卡跑不动
+ * 的根因就是 CPU 跟不上数据率。
+ *
+ * 顺序不能变：Flash 等待周期 → APB1 分频 → PLL → 切 SW。
+ * 任何一步漏了，表现都是上电跑飞或串口乱码。
+ *
+ * HSE 起振失败时**什么都不改**，继续用 HSI 8MHz —— rcc_*_hz() 都是运行时
+ * 从 RCC_CFGR 推算的，各驱动会自动按 8MHz 工作。
+ */
+static int system_clock_init(void)
+{
+    unsigned long timeout;
+
+    /* 1) Flash：72MHz 需要 2 个等待周期，且必须在提速**之前**设好，
+     *    否则取指直接跑飞。
+     *    ⚠️ 只开预取（PRFTBE），**不能**同时开半周期访问（HLFCYA）——
+     *    两者互斥，都置上会让 72MHz 下的取指全错（实测 PC 直接跳到 0）。 */
+    FLASH_ACR = FLASH_ACR_LATENCY_2 | FLASH_ACR_PREFETCH;
+
+    /* 2) 打开 HSE（板载 8MHz 晶振），等起振 */
+    RCC_CR |= (1u << 16);                   /* HSEON */
+    timeout = 0x40000u;
+    while ((RCC_CR & (1u << 17)) == 0u)     /* HSERDY */
+    {
+        if (--timeout == 0u)
+        {
+            RCC_CR &= ~(1u << 16);          /* 起振失败，关掉，留在 HSI */
+            return -1;
+        }
+    }
+
+    /* 3) 总线分频 + PLL 参数：
+     *      AHB  = /1  → 72MHz
+     *      APB1 = /2  → 36MHz（F103 的 APB1 上限）
+     *      APB2 = /1  → 72MHz
+     *      ADC  = /6  → 12MHz（不用 ADC，但按规范设）
+     *      PLL  = HSE(8MHz) × 9 = 72MHz
+     *    位段：HPRE[7:4] PPRE1[10:8] PPRE2[13:11] ADCPRE[15:14]
+     *          PLLSRC[16] PLLXTPRE[17] PLLMUL[21:18] */
+    RCC_CFGR = (RCC_CFGR & ~0x003FFFF0u) |
+               (0x0u << 4) |                /* HPRE  /1  */
+               (0x4u << 8) |                /* PPRE1 /2  */
+               (0x0u << 11) |               /* PPRE2 /1  */
+               (0x2u << 14) |               /* ADCPRE /6 */
+               (1u << 16) |                 /* PLLSRC = HSE（不是 HSI/2） */
+               (0x7u << 18);                /* PLLMUL = ×9 */
+
+    /* 4) 打开 PLL 并等锁定 */
+    RCC_CR |= (1u << 24);                   /* PLLON */
+    timeout = 0x40000u;
+    while ((RCC_CR & (1u << 25)) == 0u)     /* PLLRDY */
+    {
+        if (--timeout == 0u)
+        {
+            RCC_CR &= ~(1u << 24);
+            return -1;                      /* PLL 没锁上，仍跑 HSI */
+        }
+    }
+
+    /* 5) 切换系统时钟到 PLL，并等切换完成（SWS） */
+    RCC_CFGR = (RCC_CFGR & ~0x3u) | 0x2u;   /* SW = PLL */
+    timeout = 0x40000u;
+    while (((RCC_CFGR >> 2) & 0x3u) != 0x2u)
+    {
+        if (--timeout == 0u)
+        {
+            return -1;
+        }
+    }
+
+    return 0;
+}
 
 static unsigned long rcc_sysclk_hz(void)
 {
@@ -279,8 +361,29 @@ static void board_sd_init(void)
 /* ================= 板级入口（由 rtthread_startup 调用） ================= */
 void rt_hw_board_init(void)
 {
+    int clock_ok;
+
+    /* 阶段 0：系统时钟（HSE ×9 = 72MHz；失败自动留在 HSI 8MHz）。
+     * 必须在串口之前 —— 波特率、SysTick、各外设分频都按切换后的频率算。
+     * 注意：失败时这里**不能**打印，串口还没初始化（先记下来，后面再报）。 */
+    clock_ok = system_clock_init();
+
     /* 阶段 1：串口硬件就绪（此刻还没有堆，驱动只配寄存器） */
     uart_hw_init(UART_BAUD, rcc_pclk2_hz());
+
+    if (clock_ok != 0)
+    {
+        rt_kprintf("[clock] HSE/PLL 未就绪，退回 HSI %lu Hz\n",
+                   (unsigned long)rcc_sysclk_hz());
+    }
+    else
+    {
+        rt_kprintf("[clock] SYSCLK %lu Hz（HCLK %lu / PCLK1 %lu / PCLK2 %lu）\n",
+                   (unsigned long)rcc_sysclk_hz(),
+                   (unsigned long)rcc_ahb_hz(),
+                   (unsigned long)rcc_pclk1_hz(),
+                   (unsigned long)rcc_pclk2_hz());
+    }
 
     /* 启动延时 3s：与 Zephyr CONFIG_BOOT_DELAY=3000 对齐，给串口工具抓启动日志开窗口 */
     rt_kprintf("[RT-Thread] boot 启动等待 3.0s（对齐 Zephyr CONFIG_BOOT_DELAY=3000）...\n");

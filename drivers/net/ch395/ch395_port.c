@@ -2,12 +2,12 @@
  * ch395_port.c - CH395Q 传输层（STM32F103 寄存器级，不依赖 HAL）
  *
  * SPI1 配置：主机、8 位、模式 3（CPOL=1/CPHA=1，与正点原子驱动一致）、
- *           软件 NSS、MSB first、fPCLK2/2。
+ *           软件 NSS、MSB first；分频按 PCLK2 现算。
  *
- * 关于分频：本板时钟方案是 HSI 8MHz（见 board.c），APB2 = 8MHz，
- * 所以 /2 得到 4MHz。CH395 支持 mode0/mode3，官方 EVT 用 mode3。
- * 若以后把主频提到 72MHz，这里必须改成 /16 以上（CH395 SPI 上限约 30MHz，
- * 但 4MHz 对 1514 字节一帧来说已经够用，改大收益有限，稳妥优先）。
+ * 关于分频：SPI1 挂在 APB2 上，SPI_CK = PCLK2 / 2^(BR+1)，代码取「不超过
+ * CH395_SPI_MAX_HZ（18MHz，手册上限 30MHz 留余量）」的最快档 ——
+ * HSI 8MHz 时选 /2 = 4MHz，HSE+PLL 72MHz 时选 /4 = 18MHz，换主频不用改这里。
+ * CH395 支持 mode0/mode3，官方 EVT 用 mode3。
  *
  * 关于总线共享：PA5/PA6/PA7 同时接 VS1053。初始化时把 VS1053 按住复位
  * （PE6=0）并把 XCS 拉高（PF7=1），否则它可能在 CH395 读数据时驱动 MISO。
@@ -22,6 +22,7 @@
 
 /* ============================ 寄存器定义 ============================ */
 #define RCC_BASE        0x40021000u
+#define RCC_CFGR        (*(volatile uint32_t *)(RCC_BASE + 0x04u))
 #define RCC_APB2ENR     (*(volatile uint32_t *)(RCC_BASE + 0x18u))
 
 #define AFIO_BASE       0x40010000u
@@ -59,6 +60,9 @@
 /* SPI_CR1 位 */
 #define SPI_CR1_CPHA    (1u << 0)
 #define SPI_CR1_CPOL    (1u << 1)
+/* CH395 的 SPI 时钟上限：手册标 30MHz，取 18MHz 留余量 */
+#define CH395_SPI_MAX_HZ    18000000u
+
 #define SPI_CR1_MSTR    (1u << 2)
 #define SPI_CR1_BR_DIV2 (0u << 3)
 #define SPI_CR1_SPE     (1u << 6)
@@ -96,6 +100,48 @@ static void ch395_pin_config(uint32_t base, unsigned pin, unsigned mode_cnf)
 }
 
 /* ============================ 传输层接口 ============================ */
+/* 读 RCC_CFGR 现算 PCLK2，再选一个不超过 CH395_SPI_MAX_HZ 的最快分频。
+ * 不依赖 BSP 传参：换主频（HSI 8MHz / HSE+PLL 72MHz）都不用改这里。 */
+static uint32_t ch395_spi_br(void)
+{
+    static const uint8_t hpre_div[16] = { 1,1,1,1,1,1,1,1, 2,4,8,16,64,128,256,512 };
+    static const uint8_t ppre2_div[8] = { 1,1,1,1, 2,4,8,16 };
+    uint32_t cfgr = RCC_CFGR;
+    uint32_t clk;
+    uint32_t br;
+
+    switch ((cfgr >> 2) & 0x3u)             /* SWS：当前实际时钟源 */
+    {
+    case 1u:                                /* HSE 直连 */
+        clk = 8000000u;
+        break;
+    case 2u:                                /* PLL */
+    {
+        uint32_t src   = (cfgr >> 16) & 0x1u;
+        uint32_t xtpre = (cfgr >> 17) & 0x1u;
+        uint32_t mul   = ((cfgr >> 18) & 0xFu) + 2u;
+        uint32_t in    = src ? (8000000u >> xtpre) : 4000000u;   /* HSI/2 */
+        clk = in * mul;
+        break;
+    }
+    default:                                /* HSI */
+        clk = 8000000u;
+        break;
+    }
+
+    clk /= hpre_div[(cfgr >> 4) & 0xFu];    /* AHB  */
+    clk /= ppre2_div[(cfgr >> 11) & 0x7u];  /* APB2 */
+
+    for (br = 0u; br < 7u; br++)
+    {
+        if ((clk >> (br + 1u)) <= CH395_SPI_MAX_HZ)
+        {
+            return br;
+        }
+    }
+    return 7u;                              /* 最慢档兜底 */
+}
+
 void ch395_port_init(void)
 {
     rt_mutex_init(&s_spi_lock, "ch395", RT_IPC_FLAG_PRIO);
@@ -126,10 +172,10 @@ void ch395_port_init(void)
     ch395_pin_config(GPIOA_BASE, CH395_MISO_PIN, 0x4);
     ch395_pin_config(GPIOA_BASE, CH395_MOSI_PIN, 0xB);
 
-    /* SPI1：主机 + 模式3 + 软件 NSS + 8 位 + MSB + fPCLK2/2 */
+    /* SPI1：主机 + 模式3 + 软件 NSS + 8 位 + MSB；分频按 PCLK2 现算 */
     SPI_CR1(SPI1_BASE) = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI |
                          SPI_CR1_CPOL | SPI_CR1_CPHA |
-                         SPI_CR1_BR_DIV2 | SPI_CR1_SPE;
+                         (ch395_spi_br() << 3) | SPI_CR1_SPE;
 }
 
 void ch395_hw_reset(void)

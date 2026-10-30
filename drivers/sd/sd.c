@@ -73,7 +73,7 @@
  *
  * 换板/换卡确认 4 位没问题时，把这个宏改成 1 即可，其它代码不用动。 */
 #ifndef SD_BUS_WIDTH_4
-#define SD_BUS_WIDTH_4              0
+#define SD_BUS_WIDTH_4              1
 #endif
 
 /* 识别阶段依次尝试的时钟：从规范上限往下退。
@@ -642,6 +642,16 @@ int sd_parse_cid(const uint8_t cid[16], struct sd_cid *info)
                                                (cid[14] >> 4)));
     info->month = (uint8_t)(cid[14] & 0x0Fu);
     return 0;
+}
+
+int sd_set_clock(struct sd_card *card, uint32_t hz)
+{
+    if ((card == NULL) || (card->host == NULL) || (card->host->ops == NULL) ||
+        (card->host->ops->set_clock == NULL))
+    {
+        return SD_ERR_PARAM;
+    }
+    return (card->host->ops->set_clock(card->host, hz) == 0) ? 0 : SD_ERR_IO;
 }
 
 /* ============================ 默认实例 ============================ */
