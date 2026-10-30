@@ -11,9 +11,11 @@ if(BOARD STREQUAL "stm32f103")
     set(BSP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/stm32f103)
 
     add_library(board OBJECT ${BSP_DIR}/board.c)
-    # board 需要内核头（rtthread.h、rthw.h）、rtconfig.h/lwipopts.h 与 board.h（均在本目录）
+    # board 需要内核头（rtthread.h、rthw.h）、rtconfig.h/lwipopts.h 与 board.h（均在本目录）；
+    # 另外 board 是「装配根」，要把 storage module 与后端接起来，故还要看到 modules/storage
     target_include_directories(board PUBLIC
         ${BSP_DIR}
+        ${CMAKE_SOURCE_DIR}/modules/storage
     )
     target_link_libraries(board PRIVATE ${RTOS_KERNEL_TARGET})
 

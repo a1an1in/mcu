@@ -59,6 +59,8 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/drivers/gpio
     ${CMAKE_SOURCE_DIR}/drivers/uart
     ${CMAKE_SOURCE_DIR}/drivers/net/ch395
+    ${CMAKE_SOURCE_DIR}/drivers/i2c
+    ${CMAKE_SOURCE_DIR}/drivers/eeprom
     ${CMAKE_SOURCE_DIR}/drivers
     ${CMAKE_SOURCE_DIR}/bsp/${BOARD}
 )
@@ -119,6 +121,8 @@ add_executable(stm32f103.elf
     $<TARGET_OBJECTS:gpio>
     $<TARGET_OBJECTS:uart>
     $<TARGET_OBJECTS:ch395>
+    $<TARGET_OBJECTS:i2c>
+    $<TARGET_OBJECTS:eeprom>
     $<TARGET_OBJECTS:osal>
     $<TARGET_OBJECTS:modules>
     $<TARGET_OBJECTS:applications>

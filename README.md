@@ -21,6 +21,7 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 | `drivers/gpio/` | GPIO 接口 + 三种后端实现 | `docs/gpio.md` |
 | `drivers/uart/` | UART 接口 + 寄存器收发 + RT-Thread 控制台设备 | `docs/drivers.md` |
 | `drivers/net/` | 网络驱动（CH395Q：SPI + MACRAW + lwIP） | `docs/drivers.md` |
+| `drivers/i2c/` | I2C 总线（bit-bang + Linux 风格 `i2c_transfer`）+ 严格 SMBus 协议层 | `docs/drivers.md` |
 | `bsp/` | 板卡分派入口（`CMakeLists.txt`）；每块板的配置在其子目录 | `docs/architecture.md` |
 | `bsp/stm32f103/` | 这块板的全部内容：`rtconfig.h`、`lwipopts.h`、`board.c/.h`、startup 汇编、链接脚本 | `docs/build-flash-debug.md` |
 | `rtos/rt-thread/` | RT-Thread 源码（submodule，v5.2.2）+ 纯 CMake 集成 | `docs/architecture.md` |

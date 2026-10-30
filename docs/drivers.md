@@ -32,6 +32,24 @@ drivers/
 │   ├── stm32f1_uart.c        芯片实现（寄存器收发）
 │   └── rtthread_uart.c       OS 适配（rt_device + rt_sem + 控制台）
 │
+├── i2c/
+│   ├── i2c.h                 接口（Linux 风格 i2c_msg / i2c_transfer）
+│   ├── i2c_core.c            通用逻辑（adapter 注册表 + 重试 + 寄存器读写）
+│   ├── i2c_bit.c             通用 bit-bang 时序（含时钟延展与 tTIMEOUT）
+│   ├── i2c_config.h          板级事实（SCL/SDA 引脚、速率、延展超时）
+│   ├── smbus.h               严格 SMBus 协议接口（11 种协议压成 2 个读写入口 + PEC）
+│   ├── smbus.c               SMBus 协议实现（CRC-8 PEC / byte-count / 小端）
+│   ├── stm32f1_i2c.h         芯片实现入口声明
+│   ├── stm32f1_i2c.c         芯片实现（GPIO 原语 + DWT 微秒延时）
+│   └── rtthread_i2c.c        OS 适配（总线互斥量 + i2c_scan/read/write）
+│
+├── eeprom/
+│   ├── at24c02.h             AT24C02 接口（256B / 8 字节每页，OS 无关）
+│   ├── at24c02.c             器件协议（页切分写 + ACK 轮询）+ at24c02_register()
+│   ├── at24c02_config.h      板级事实（7 位地址、轮询次数）
+│   ├── eeprom.h              字节级访问抽象（struct eeprom_ops + eeprom_dev）
+│   └── eeprom.c              通用核心：参数/越界校验 + 分发（不含器件知识）
+│
 └── net/ch395/
     ├── ch395.h               器件命令码（OS 无关）
     ├── ch395_cmd.c           器件协议（OS 无关）
@@ -92,6 +110,7 @@ stm32f1_*.c / *_cmd.c ──✗──► <rtthread.h> 等 OS 头
 | **换板子**（同芯片，引脚/实例不同） | ❌ 不加 | 改配置：实例号、TX/RX 引脚、波特率、时钟 |
 | **换芯片**（F103 → F407） | ✅ 加 `stm32f4_uart.c` | 新增芯片实现，接口不动 |
 | **换 OS**（RT-Thread → Zephyr） | ✅ 加 `zephyr_uart.c` | 新增 OS 适配，接口不动 |
+| **换器件**（24C02 → 24C64 / FRAM / 内部 Flash） | ✅ 加 `<dev>.c` | 器件文件里加一个 `eeprom_ops` 表 + `xxx_register()`；`eeprom.c` 与上层模块不动 |
 
 > **自检**：如果换一块同芯片的板子逼得你新增或修改驱动实现文件，说明这个驱动的
 > 板级事实还没抽干净。此时应补 `*_config.h`（或改成初始化传参），而不是加文件。
@@ -132,6 +151,8 @@ Zephyr 侧不走 `drivers/CMakeLists.txt`（它是独立构建宿主），在
 | `drivers/gpio/` | ✅ `gpio.h` + `stm32f1_gpio.c` + `rtthread_gpio.c` + `zephyr_gpio.c` | 把 `GPIO_BACKEND` 手填开关改为跟随 `DRIVER_OS` |
 | `drivers/uart/` | ⚠️ `uart.h` + `stm32f1_uart.c` | `stm32f1_uart.c` 目前混有 `rt_sem` / `rt_device` / `rt_console_set_device`，待拆出 `rtthread_uart.c`；引脚与 USART 实例待抽 `uart_config.h` |
 | `drivers/net/ch395/` | ⚠️ `ch395.h` + `ch395_cmd.c` + `ch395_port.c` + `ch395_eth.c` | `ch395_eth.c` 含 `eth_device` 接入与调试命令，待拆为「核心 + `rtthread_ch395.c`」；`ch395_port.c` 的引脚/主频待抽 `ch395_config.h`；VS1053 隔离逻辑应上移 BSP；`ch395_cmd.c` 里的 `rt_kprintf` 待换日志宏 |
+| `drivers/i2c/` | ✅ `i2c.h` + `i2c_core.c` + `i2c_bit.c` + `i2c_config.h` + `smbus.{h,c}` + `stm32f1_i2c.{h,c}` + `rtthread_i2c.c` | 总线层（bit-bang，PB6/PB7，100kHz，SCL/SDA 均开漏，支持时钟延展与 tTIMEOUT）与严格 SMBus 协议层（11 种协议只需 `smbus_read`/`smbus_write` 两个入口，另加 `smbus_process_call`/`smbus_block_process_call`，含 PEC）完成 |
+| `drivers/eeprom/` | ✅ `at24c02.h` + `at24c02.c` + `at24c02_config.h` + `eeprom.h` + `eeprom.c` | AT24C02（256B / 8 字节每页）：自动按页切分写、ACK 轮询等写周期（不依赖 OS 延时）、越界检查。`eeprom.h` 是**与器件无关**的字节级接口：`struct eeprom_ops`（read/write，首参 `struct eeprom_dev *`）+ `eeprom_read/eeprom_write`（统一做参数与越界校验）。`at24c02_read/at24c02_write` 就是 ops 的实现（器件自己的 `struct at24c02_dev *` 从 `dev->ctx` 取），因此 `at24c02_eeprom_ops` 原样指向它们、没有转形状的壳，注册只需 `at24c02_register()`；新增器件照此在自己的 .c 里实现 ops + register 即可（核心与 `modules/storage` 不动）。无 OS 适配层、无 SoC 层（总线已由 i2c 组件抽象） |
 
 ## 9. 新增一个驱动时的检查清单
 

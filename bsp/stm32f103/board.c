@@ -17,9 +17,15 @@
 
 #include "board.h"
 #include "uart.h"
+#include "stm32f1_i2c.h"
+#include "at24c02.h"
+#include "at24c02_config.h"
+#include "eeprom.h"
+#include "eeprom_storage.h"
 
 /* ================= 板级事实 ================= */
 #define UART_BAUD       115200u
+#define BOARD_I2C_BUS_NR 0u     /* stm32f1_i2c_gpio_init() 固定把这条总线注册成 0 */
 #define RCC_BASE        0x40021000u
 #define RCC_CFGR        (*(volatile unsigned long *)(RCC_BASE + 0x04u))
 
@@ -130,6 +136,57 @@ void SysTick_Handler(void)
     rt_interrupt_leave();
 }
 
+/* ================= 板级外设（每个功能一个函数，入口处只占一行） ================= */
+
+/* I2C0：PB6 = SCL / PB7 = SDA，板载 AT24C02 就挂在这条总线上。
+ * 建总线（注册成 adapter 0）+ 空闲电平自检。异常只告警不阻止启动：
+ * 用户还能用 msh 的 i2c_scan / i2c_read 排查。 */
+static void board_i2c_init(void)
+{
+    struct i2c_adapter *i2c0 = stm32f1_i2c_gpio_init((uint32_t)rcc_ahb_hz());
+
+    /* 两条线都开漏、靠上拉变高；空闲态读回不是高电平说明没上拉或总线被拉死 */
+    if (i2c0 == NULL || i2c_bit_recover(i2c0) != 0)
+    {
+        rt_kprintf("[i2c] I2C0 空闲电平异常（SCL/SDA 未上拉或被拉低），I2C 可能不可用\n");
+    }
+}
+
+/* 配置存储：EEPROM 器件 → eeprom 适配层 → eeprom_storage 默认实例。
+ * 失败只告警：配置读不出来时系统仍应能用默认值跑起来。
+ * 换器件的动作全在这一个函数里（at24c02_* → 别的 xxx_register），入口不动。 */
+static void board_storage_init(void)
+{
+    /* module 只记设备指针且要用很久，所以 chip / rom 必须静态 */
+    static struct at24c02_dev chip;
+    static struct eeprom_dev  rom;
+
+    struct i2c_adapter *i2c0 = i2c_get_adapter(BOARD_I2C_BUS_NR);
+    eeprom_storage_t *es;
+
+    if (i2c0 == NULL)
+    {
+        rt_kprintf("[storage] I2C 总线未就绪，配置存储不可用\n");
+        return;
+    }
+
+    at24c02_init(&chip, i2c0, (uint16_t)AT24C02_BOARD_ADDR);
+    if (at24c02_register(&rom, &chip, AT24C02_CAPACITY) != EEPROM_OK)
+    {
+        rt_kprintf("[storage] EEPROM 注册失败，配置存储不可用\n");
+        return;
+    }
+
+    es = eeprom_storage_create();
+    if (es == NULL || es->init(es, &rom) != OSAL_OK)
+    {
+        eeprom_storage_destroy(es);
+        rt_kprintf("[storage] 配置存储初始化失败\n");
+        return;
+    }
+    eeprom_storage_set_default(es);
+}
+
 /* ================= 板级入口（由 rtthread_startup 调用） ================= */
 void rt_hw_board_init(void)
 {
@@ -156,4 +213,10 @@ void rt_hw_board_init(void)
     /* 阶段 2：接收中断 + 字符设备注册 + 设为控制台
      * 必须在 heap_init 之后（rt_sem_create 需要动态内存） */
     uart_console_attach();
+
+    /* 阶段 3：I2C0 总线 —— 建总线 + 空闲电平自检（细节见 board_i2c_init） */
+    board_i2c_init();
+
+    /* 阶段 4：配置存储 —— EEPROM → 适配层 → module 默认实例（msh 的 cfg_* 用它） */
+    board_storage_init();
 }

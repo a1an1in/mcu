@@ -3,6 +3,7 @@
 #
 #   gpio/  — GPIO 三后端（自研寄存器 / RT-Thread PIN / Zephyr GPIO）的接口一致性
 #   hw/    — 业务模块行为，例：modules/key + modules/led 的「按 KEY1 点亮 DS0」
+#   storage/ — modules/storage：EEPROM key-value 落盘布局与坏数据兜底
 #
 # 用法：
 #   python3 tools/devops.py build --host   # 编译固件 + 编译 host 单测（只编译）
@@ -20,3 +21,4 @@ set(CMAKE_C_STANDARD 11)
 
 add_subdirectory(gpio)
 add_subdirectory(hw)
+add_subdirectory(storage)
