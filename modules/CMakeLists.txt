@@ -24,6 +24,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/i2c_cmd.c
         msh/spi_cmd.c
         msh/flash_cmd.c
+        msh/sd_cmd.c
     )
 endif()
 
@@ -35,6 +36,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/drivers/i2c
     ${CMAKE_SOURCE_DIR}/drivers/spi
     ${CMAKE_SOURCE_DIR}/drivers/flash
+    ${CMAKE_SOURCE_DIR}/drivers/sd
     ${CMAKE_SOURCE_DIR}/modules/storage
 )
 

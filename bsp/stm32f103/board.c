@@ -27,6 +27,8 @@
 #include "stm32f1_spi.h"
 #include "w25q128.h"
 #include "w25q128_config.h"
+#include "sd.h"
+#include "stm32f1_sdio.h"
 
 /* ================= 板级事实 ================= */
 #define UART_BAUD       115200u
@@ -251,6 +253,29 @@ static void board_flash_init(void)
     w25q128_set_default(&s_flash);
 }
 
+/* ================= SD 卡 =================
+ * 只建 SDIO 主机（配引脚 + 上电，不发命令）；**不识别卡**。
+ * sd_init() 要和卡通信（CMD0/CMD8/ACMD41…），必须等内核调度器起来之后
+ * 才能调 —— 放到这里会在 rt_system_scheduler_init 之前碰 OS 对象。
+ * 识别动作由第一次 sd_read_blocks / msh 的 sd 命令自动触发。
+ */
+static struct sd_card s_sd;
+
+static void board_sd_init(void)
+{
+    struct sdio_host *host = stm32f1_sdio_init((uint32_t)rcc_ahb_hz());
+
+    if (host == NULL)
+    {
+        rt_kprintf("[sd] SDIO 主机初始化失败\n");
+        return;
+    }
+
+    s_sd.host = host;
+    s_sd.type = (uint8_t)SD_TYPE_UNKNOWN;
+    sd_set_default(&s_sd);
+}
+
 /* ================= 板级入口（由 rtthread_startup 调用） ================= */
 void rt_hw_board_init(void)
 {
@@ -289,4 +314,7 @@ void rt_hw_board_init(void)
 
     /* 阶段 6：板载 NOR FLASH —— 挂在 spi0 上，片选 PB12 */
     board_flash_init();
+
+    /* 阶段 7：SDIO 主机（只配引脚/上电，卡的识别推迟到第一次访问） */
+    board_sd_init();
 }
