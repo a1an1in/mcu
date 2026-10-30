@@ -391,6 +391,9 @@ fail:
     osal_printf("\n  排查：`flash info` 看 ID / `flash test` 手动跑一遍");
 }
 
+/* 自测只跑一次的标记：主循环里按 WK_UP 触发，跑完置 1，之后不再响应 */
+static int s_selftest_done;
+
 #endif /* __ZEPHYR__ */
 
 /* ---------------------------------------------------------------------------
@@ -507,8 +510,6 @@ static void hw_test_start(void)
 /* RT-Thread 系统完成初始化后，会在 main 线程中调用 main() */
 int main(void)
 {
-    uint32_t n = 0;
-
     /* 编译期判定当前 RTOS 后端（两个平台复用同一份 main.c）：
      *   - Zephyr 构建总会用编译器命令行传 -D__ZEPHYR__=1，因此对它专门判断；
      *   - 其余即 RT-Thread（本工程仅支持 zephyr / rt-thread 两个后端）。
@@ -525,11 +526,14 @@ int main(void)
 #else
     boot_devices_dump_rtthread(rtos);
 
-    /* 存储自测：跑一次就结束，成功/失败都只打印一行，不建线程、不阻塞启动 */
-    storage_selftest();
-
-    /* NOR FLASH 自测：只测空扇区，测完擦回空，不破坏数据 */
-    flash_selftest();
+    /* 存储 / FLASH 自测不自动跑：主循环里按一下 WK_UP 才触发，且只跑一次。
+     * 这两个自测会真的写片子（EEPROM 一次、FLASH 最多 2 次扇区擦除），
+     * 平时开机不必每次都磨；想测的时候按一下就行。
+     *
+     * 注意 key_init() 只能在这里（线程上下文）调 —— 它要建扫描线程，
+     * 而 board 初始化跑在调度器启动之前。 */
+    key_init();
+    osal_printf("\n[selftest] 按一下 WK_UP(PA0) 可跑一次存储 / FLASH 自测");
 #endif
 
     /* 硬件自测：KEY0/KEY1 按住点亮各自 LED，KEY2 切换两灯交替闪
@@ -540,9 +544,23 @@ int main(void)
      * 开启较晚/首屏刷新而错过启动时的一次性输出，保证任何时候都能看到。 */
     for (;;)
     {
-        // osal_printf("\n[app32-%s] heartbeat #%u : Hello, world! (STM32F103, OSAL backend: %s) via UART1",
-        //             rtos, (unsigned)n++, rtos);
+#ifdef __ZEPHYR__
         osal_thread_sleep_ms(3000u);
+#else
+        /* 按一下 WK_UP 触发一次存储 / FLASH 自测。
+         * key_pressed() 是「读取即清除」的边沿接口 —— 按住不放也只产生一次；
+         * s_selftest_done 再兜一层，保证整个上电周期里最多跑一次。 */
+        if ((s_selftest_done == 0) && key_pressed(KEY_UP))
+        {
+            s_selftest_done = 1;
+            storage_selftest();
+            flash_selftest();
+            osal_printf("\n[selftest] 完成，不再重复（复位后可再按一次）");
+        }
+
+        /* 等按键时 100ms 轮询一次（按下立刻有反应），测完回到 3s 心跳 */
+        osal_thread_sleep_ms((s_selftest_done != 0) ? 3000u : 100u);
+#endif
     }
 
     return 0;

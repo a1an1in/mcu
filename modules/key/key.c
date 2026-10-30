@@ -73,6 +73,16 @@ void key_init(void)
 {
     int i;
 
+    /* 幂等：main() 里做「按 WK_UP 跑自测」要用到它，hw_test_start() 里还会再调一次，
+     * 重复建扫描线程会泄漏。 */
+    static int s_inited = 0;
+
+    if (s_inited)
+    {
+        return;
+    }
+    s_inited = 1;
+
     for (i = 0; i < (int)KEY_COUNT; i++)
     {
         gpio_input_init(s_key_pin[i], s_key_pull[i]);
