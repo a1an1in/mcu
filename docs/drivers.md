@@ -41,7 +41,7 @@ drivers/
 │   ├── smbus.c               SMBus 协议实现（CRC-8 PEC / byte-count / 小端）
 │   ├── stm32f1_i2c.h         芯片实现入口声明
 │   ├── stm32f1_i2c.c         芯片实现（GPIO 原语 + DWT 微秒延时）
-│   └── rtthread_i2c.c        OS 适配（总线互斥量 + i2c_scan/read/write）
+│   └── rtthread_i2c.c        OS 适配（只做总线互斥量；msh 命令在 modules/msh/i2c_cmd.c）
 │
 ├── eeprom/
 │   ├── at24c02.h             AT24C02 接口（256B / 8 字节每页，OS 无关）

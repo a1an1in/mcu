@@ -13,17 +13,21 @@ add_library(modules OBJECT
 )
 
 # msh 命令属于「给 shell 用的适配」，只在有 shell 的 RTOS 后端编译。
-# 命令本身只调 module 接口，不碰硬件（见 msh/storage_cmd.c 头注释）。
+# 命令本身只调 module / driver 的接口，不碰寄存器（见各文件头注释）：
+#   msh/storage_cmd.c   eeprom <get|set|save|load>
+#   msh/i2c_cmd.c       i2c <scan|read|write|smbtest>
 if(RTOS STREQUAL "rt-thread")
     target_sources(modules PRIVATE
         msh/storage_cmd.c
+        msh/i2c_cmd.c
     )
 endif()
 
-# 模块需要 OSAL 与 driver 头文件；msh/ 只依赖 module 接口，这里补上 storage 头目录
+# 模块需要 OSAL 与 driver 头文件；msh/ 还会用到 drivers/i2c 的 i2c.h / smbus.h
 target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/osal/include
     ${CMAKE_SOURCE_DIR}/drivers
+    ${CMAKE_SOURCE_DIR}/drivers/i2c
     ${CMAKE_SOURCE_DIR}/modules/storage
 )
 

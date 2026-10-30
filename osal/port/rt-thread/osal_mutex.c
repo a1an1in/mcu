@@ -6,6 +6,12 @@
 #include <osal.h>
 #include <rtthread.h>
 
+/* 内核对象名上限是 RT_NAME_MAX - 1（还要留 1 字节给 '\0'），名字超长会在
+ * rt_object_allocate() 里触发断言直接死机 —— 那要等烧到板子上才看得见，
+ * 这里在编译期就挡住。RT_NAME_MAX 由 bsp/<board>/rtconfig.h 决定。 */
+_Static_assert(sizeof("osal_mutex") - 1u <= RT_NAME_MAX - 1u,
+               "RT_NAME_MAX 太小：osal_mutex 名字超出内核对象名上限（obj_name_len <= RT_NAME_MAX - 1）");
+
 static rt_tick_t osal_to_tick(uint32_t ms)
 {
     if (ms == OSAL_WAIT_FOREVER)

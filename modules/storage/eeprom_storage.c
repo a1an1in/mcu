@@ -767,17 +767,18 @@ static int es_init(eeprom_storage_t *es, struct eeprom_dev *dev)
             return OSAL_ENOMEM;
         }
     }
-    if (osal_mutex_lock(p->lock, OSAL_WAIT_FOREVER) != OSAL_OK)
-    {
-        return OSAL_EBUSY;
-    }
 
+    /* 注意：这里刻意不加锁。
+     * init 只做「绑后端 + 清缓存」，调用方（板级装配）本来就是单线程；
+     * 更要紧的是它可能跑在调度器启动之前（RT-Thread 的 rt_hw_board_init 早于
+     * rt_system_scheduler_init），那时 rt_mutex_take() 拿不到 rt_thread_self()，
+     * 会往野地址写 TCB 字段，表现成 BusFault/IMPRECISERR 直接死机。
+     * 互斥量本身在这里创建是安全的（纯对象分配，不依赖当前线程）。 */
     p->dev = dev;
     p->size = dev->capacity;
     es_cache_clear(p);
     p->loaded = 0u;
 
-    osal_mutex_unlock(p->lock);
     return OSAL_OK;
 }
 

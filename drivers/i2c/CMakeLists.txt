@@ -8,7 +8,7 @@
 #   i2c_config.h   板级事实：SCL/SDA 引脚、半周期延时
 #   smbus.h/.c     严格 SMBus 协议层（Quick/Send/Receive/Byte/Word/Block/PEC）
 #   stm32f1_i2c.c  芯片实现：STM32F1 寄存器原语 + DWT 微秒延时
-#   rtthread_i2c.c OS 适配：总线互斥量 + i2c_scan/read/write 命令
+#   rtthread_i2c.c OS 适配：总线互斥量（msh 命令在 modules/msh/i2c_cmd.c）
 #
 # 除 rtthread_i2c.c 外都不含任何 OS 头。
 # =============================================================================

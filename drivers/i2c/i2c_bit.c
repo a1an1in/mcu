@@ -284,29 +284,34 @@ static int i2c_bit_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
     for (i = 0; i < num; i++)
     {
         struct i2c_msg *msg = &msgs[i];
-        uint8_t addr_byte;
 
         if (msg->flags & I2C_M_TEN)
         {
             return I2C_ERR_PARAM;       /* 10 位地址未实现 */
         }
 
+        /* I2C_M_NOSTART = 「接着上一段继续发」：既不发 START，也**不发地址字节**
+         * （Linux 语义）。i2c_reg_write() 正是靠它把 [reg][data...] 拼成一次连续写；
+         * 如果这里仍发地址，那个地址字节会被从机当成第一个数据字节收下 ——
+         * 整段数据错位一格、末尾丢一个字节（EEPROM 表现为每次写都写歪）。 */
         if ((i == 0) || ((msg->flags & I2C_M_NOSTART) == 0))
         {
+            uint8_t addr_byte;
+
             ret = bit_start(adap);
             if (ret < 0)
             {
                 bit_stop(adap);
                 return ret;
             }
-        }
 
-        addr_byte = (uint8_t)((msg->addr << 1) | ((msg->flags & I2C_M_RD) ? 1u : 0u));
-        ret = bit_write_byte(adap, addr_byte);
-        if (ret < 0)
-        {
-            bit_stop(adap);
-            return ret;
+            addr_byte = (uint8_t)((msg->addr << 1) | ((msg->flags & I2C_M_RD) ? 1u : 0u));
+            ret = bit_write_byte(adap, addr_byte);
+            if (ret < 0)
+            {
+                bit_stop(adap);
+                return ret;
+            }
         }
 
         if (msg->flags & I2C_M_RD)

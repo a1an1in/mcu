@@ -138,6 +138,7 @@ eeprom_storage_t *eeprom_storage_get_default(void);
  */
 #define ES_ERR_NOSPACE   (-7)   /* 序列化后超过 EEPROM 可用容量 */
 #define ES_ERR_FORMAT    (-8)   /* ROM 里的数据不合法（长度/CRC/行格式） */
+#define ES_ERR_VERIFY    (-9)   /* 写后回读校验不过：器件 ACK 了但内容没落盘 */
 
 #ifdef __cplusplus
 }

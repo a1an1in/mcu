@@ -140,7 +140,7 @@ void SysTick_Handler(void)
 
 /* I2C0：PB6 = SCL / PB7 = SDA，板载 AT24C02 就挂在这条总线上。
  * 建总线（注册成 adapter 0）+ 空闲电平自检。异常只告警不阻止启动：
- * 用户还能用 msh 的 i2c_scan / i2c_read 排查。 */
+ * 用户还能用 msh 的 `i2c scan` / `i2c read` 排查。 */
 static void board_i2c_init(void)
 {
     struct i2c_adapter *i2c0 = stm32f1_i2c_gpio_init((uint32_t)rcc_ahb_hz());
@@ -154,7 +154,8 @@ static void board_i2c_init(void)
 
 /* 配置存储：EEPROM 器件 → eeprom 适配层 → eeprom_storage 默认实例。
  * 失败只告警：配置读不出来时系统仍应能用默认值跑起来。
- * 换器件的动作全在这一个函数里（at24c02_* → 别的 xxx_register），入口不动。 */
+ * 换器件的动作全在这一个函数里（at24c02_* → 别的 xxx_register），入口不动。
+ * 上层（含 main.c 的自测）一律只认这个默认实例，不再碰器件层。 */
 static void board_storage_init(void)
 {
     /* module 只记设备指针且要用很久，所以 chip / rom 必须静态 */
@@ -217,6 +218,6 @@ void rt_hw_board_init(void)
     /* 阶段 3：I2C0 总线 —— 建总线 + 空闲电平自检（细节见 board_i2c_init） */
     board_i2c_init();
 
-    /* 阶段 4：配置存储 —— EEPROM → 适配层 → module 默认实例（msh 的 cfg_* 用它） */
+    /* 阶段 4：配置存储 —— EEPROM → 适配层 → module 默认实例（msh 的 eeprom_* 用它） */
     board_storage_init();
 }

@@ -179,7 +179,14 @@ arm-none-eabi-size build/stm32f103/stm32f103           # text / data / bss 占�
 arm-none-eabi-objdump -h build/stm32f103/stm32f103     # 段布局（核对向量表位置）
 ```
 
-## 5. 常见问题
+## 5.常用测试命令
+```
+python3 tools/devops.py build --rtos rt-thread    
+python3 tools/devops.py flash --flasher dap --rtos rt-thread  
+powershell -ExecutionPolicy Bypass -File "C:\Users\a1an1in\workspace\mcu\tools\serial-mon.ps1" -Port COM4
+```
+
+## 6. 常见问题
 
 - **烧录后 / 用 DAP 复位后串口无日志**：本板用正点原子 CMSIS-DAP 时，OpenOCD 的 `reset`/`halt` 会把芯片带进 ROM BootLoader 或调试暂停态，**并不会让 Flash 固件真正重新运行**，串口因此无输出属正常。请**物理断电 2~3 秒再上电**（BOOT0=0 不变），即恢复 `heartbeat` 日志；调试期间对芯片停过 `halt` 也同理。
 - **想免断电让固件重新常驻运行**：唯一可靠办法是**硬件复位**（只有 nRST 拉低才会重新采样 `BOOT0` 从主 Flash 启动）。请把 **DAP 的 RST(nRST) 引脚接到开发板 RESET**，然后改用

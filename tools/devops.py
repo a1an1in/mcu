@@ -217,6 +217,64 @@ def _docker_base() -> list:
             "-v", f"{ROOT}:{_container_path(ROOT)}", "-w", _container_path(ROOT)]
 
 
+def _mem_total_bytes(ld_file: Path) -> "tuple[int, int]":
+    """从链接脚本的 MEMORY 段取 ROM / RAM 容量（字节），解析不到返回 0。
+
+    只认本仓库 stm32f103.ld 的一行式写法：
+        ROM (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
+    将来若换成跨行或表达式写法，这里会退化成「只打印字节数」，不影响数字本身。
+    """
+    try:
+        text = ld_file.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return 0, 0
+
+    def one(mem: str) -> int:
+        m = re.search(rf"^\s*{mem}\b[^\n]*?LENGTH\s*=\s*(\d+)\s*([KkMm]?)",
+                      text, re.MULTILINE)
+        if not m:
+            return 0
+        unit = m.group(2).upper()
+        return int(m.group(1)) * (1 << 20 if unit == "M" else 1024 if unit == "K" else 1)
+
+    return one("ROM"), one("RAM")
+
+
+def _fmt_usage(used: int, total: int) -> str:
+    """把「已用 / 总量」格式化成人读的一行；总量未知时只给字节数。"""
+    if total <= 0:
+        return f"{used / 1024.0:.1f} KB（{used} B）"
+    return (f"{used / 1024.0:.1f} KB / {total / 1024.0:.0f} KB"
+            f"（{100.0 * used / total:.1f}%）")
+
+
+def report_fw_size(elf: Path, ld_file: Path) -> None:
+    """打印固件体积：Flash = .text + .data，RAM = .data + .bss。
+
+    数字来自容器里 `arm-none-eabi-size -B` 写下的 size.txt —— 宿主机（尤其 Windows）
+    通常没有 ARM 工具链，所以不在宿主机重复量一次，只负责解析与排版。
+    """
+    sz_file = elf.parent / "size.txt"
+    try:
+        fields = sz_file.read_text(encoding="utf-8").split()
+        text_b, data_b, bss_b = int(fields[0]), int(fields[1]), int(fields[2])
+    except (OSError, ValueError, IndexError):
+        log("[devops] （未取到体积信息，可手动执行 arm-none-eabi-size <elf> 查看）")
+        return
+
+    flash, ram = text_b + data_b, data_b + bss_b
+    rom_total, ram_total = _mem_total_bytes(ld_file)
+
+    log(f"[devops] 固件体积（text/data/bss = {text_b}/{data_b}/{bss_b} B）:")
+    log(f"        Flash : {_fmt_usage(flash, rom_total)}")
+    log(f"        RAM   : {_fmt_usage(ram, ram_total)}")
+    try:
+        bin_kb = elf.with_suffix(".bin").stat().st_size / 1024.0
+        log(f"        BIN   : {bin_kb:.1f} KB（烧录镜像，含对齐填充）")
+    except OSError:
+        pass
+
+
 # ---- 编译固件（Docker 交叉编译，arm-none-eabi-gcc）----
 def do_build() -> None:
     ensure_image()
@@ -254,6 +312,12 @@ cmake -S . -B "${BUILD_DIR}/rt-thread" -G "$GEN" \\
       -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \\
       -DGPIO_BACKEND="$GPIO_BACKEND"
 cmake --build "${BUILD_DIR}/rt-thread"
+
+# 固件体积：容器里有 arm-none-eabi-size（宿主机多半没有），就在这里量。
+# 打印一份 berkeley 表格给人看，同时把最后一行写进 size.txt 供宿主机算占用率。
+ELF="${BUILD_DIR}/rt-thread/${BOARD}"
+arm-none-eabi-size -B "$ELF"
+arm-none-eabi-size -B "$ELF" | tail -n 1 > "${BUILD_DIR}/rt-thread/size.txt"
 """
     run(_docker_base() + [
         "-e", f"BOARD={BOARD}",
@@ -269,6 +333,8 @@ cmake --build "${BUILD_DIR}/rt-thread"
     log(f"        ELF : {BUILD_DIR}/rt-thread/stm32f103（主 ELF，供 GDB）")
     log(f"        BIN : {BUILD_DIR}/rt-thread/stm32f103.bin")
     log(f"        HEX : {BUILD_DIR}/rt-thread/stm32f103.hex")
+    report_fw_size(Path(BUILD_DIR) / "rt-thread" / BOARD,
+                   ROOT / "bsp" / BOARD / f"{BOARD}.ld")
 
 
 def _test_build_dir() -> str:

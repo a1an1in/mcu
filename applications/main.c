@@ -88,6 +88,10 @@ static void boot_devices_dump(const char *rtos)
 }
 #else  /* !__ZEPHYR__  → RT-Thread */
 
+#include <string.h>
+
+#include "eeprom_storage.h"     /* 存储自测直接走 module 接口，不碰驱动 */
+
 /*
  * 启动过程日志（RT-Thread）：
  *   - RT-Thread 内核启动时本身会打印启动 logo + 版本号（内核自带，非本函数）；
@@ -105,6 +109,77 @@ static void boot_devices_dump_rtthread(const char *rtos)
     osal_printf("\n  注：本裁剪版未启用 RT_USING_DEVICE（无设备框架），");
     osal_printf("无法枚举注册设备；下面打印内核启动时已创建的线程：");
     rt_startup_threads_dump(); /* 该函数内部走 rt_kprintf 同步输出 */
+}
+
+/* ---------------------------------------------------------------------------
+ * 存储自测：上电跑一次，不建线程
+ *
+ * 直接用 board_storage_init() 注册好的默认实例，不另造对象：
+ *   写一项 → save 落盘 → load 从 ROM 重读 → 比对。
+ *
+ * 中间那次 load 是必需的：get_value() 只读内存缓存，写完立刻 get 等于自问自答
+ * （save 一个字节都没写也照样返回刚写的值）；只有 load 掉缓存再从 EEPROM 读回来，
+ * 才能证明「写进片子 + 读出来 + 反序列化」这条链真的通了。
+ *
+ * 只打印不阻塞：失败也照常启动（默认实例是否可用已由 board_storage_init 判过）。
+ * 值已经是 "ok" 时 set_value 不置脏、save 一个字节都不写，所以反复上电不磨损片子。
+ * --------------------------------------------------------------------------- */
+#define STORAGE_TEST_KEY     "selftest"
+#define STORAGE_TEST_VALUE   "ok"
+
+static void storage_selftest(void)
+{
+    eeprom_storage_t *es = eeprom_storage_get_default();
+    char *v = OSAL_NULL;
+    int ret;
+
+    if (es == OSAL_NULL)
+    {
+        osal_printf("\n[storage-test] SKIP：板级未注册默认实例（EEPROM 未装配）");
+        return;
+    }
+
+    /* 1) 写缓存 + 立即落盘 */
+    ret = es->set_value(es, STORAGE_TEST_KEY, STORAGE_TEST_VALUE);
+    if (ret == OSAL_OK)
+    {
+        ret = es->save(es);
+    }
+
+    /* 2) 冲掉缓存、从 EEPROM 重建（跳过这一步，下面的 get 只会命中缓存） */
+    if (ret == OSAL_OK)
+    {
+        ret = es->load(es);
+    }
+    if (ret != OSAL_OK)
+    {
+        /* -9 = 写后回读校验不过（器件 ACK 了但没落盘），其余看 eeprom_storage.h */
+        osal_printf("\n[storage-test] FAIL：写/读 EEPROM 失败 ret=%d", ret);
+        osal_printf("\n  排查：msh 里 `i2c scan` 看 0x50 是否在，"
+                    "`i2c read 0x50 0x00 8` 看 ROM 里到底存了什么");
+        return;
+    }
+
+    /* 3) 比对 */
+    v = es->get_value(es, STORAGE_TEST_KEY);
+    if (v != OSAL_NULL && strcmp(v, STORAGE_TEST_VALUE) == 0)
+    {
+        osal_printf("\n[storage-test] PASS：%s = %s（save -> load 读回一致）",
+                    STORAGE_TEST_KEY, v);
+    }
+    else
+    {
+        /* 走到这里说明 load 认为 ROM 是空的（头部不是本模块格式），
+         * 即「写进去了但读不回来 / 根本没写进去」。把查法直接打出来。 */
+        osal_printf("\n[storage-test] FAIL：%s 读回 %s，期望 \"%s\"",
+                    STORAGE_TEST_KEY,
+                    v != OSAL_NULL ? v : "(null)", STORAGE_TEST_VALUE);
+        osal_printf("\n  排查：`i2c read 0x50 0x00 8` 看 ROM 首字节"
+                    "（45 01=格式对；FF FF=没落盘，多为 WP 拉高/写保护；"
+                    "其它=写入错位）");
+    }
+
+    osal_free(v);
 }
 
 #endif /* __ZEPHYR__ */
@@ -240,6 +315,9 @@ int main(void)
     boot_devices_dump(rtos);
 #else
     boot_devices_dump_rtthread(rtos);
+
+    /* 存储自测：跑一次就结束，成功/失败都只打印一行，不建线程、不阻塞启动 */
+    storage_selftest();
 #endif
 
     /* 硬件自测：KEY0/KEY1 按住点亮各自 LED，KEY2 切换两灯交替闪

@@ -16,7 +16,12 @@
 #define SOC_SERIES_STM32F1
 
 /* ===== 内核基础 ===== */
-#define RT_NAME_MAX          8
+/* 内核对象名上限。RT-Thread 的断言是 obj_name_len <= RT_NAME_MAX - 1，
+ * 而 OSAL 适配层给内核对象起的名字是 "osal_mutex"（10 字符，见
+ * osal/port/rt-thread/osal_mutex.c），8 装不下，rt_object_allocate() 会直接断言。
+ * 12 与 RT-Thread 官方 bsp 的常见取值一致：足够放到 "osal_mutex"，
+ * 每个内核对象只多占 4 字节（name[] 由 8 变 12）。 */
+#define RT_NAME_MAX          12
 #define RT_CPUS_NR           1
 #define RT_ALIGN_SIZE        8
 #define RT_THREAD_PRIORITY_32
