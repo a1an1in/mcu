@@ -10,7 +10,13 @@ add_library(modules OBJECT
     led/led.c
     key/key.c
     storage/eeprom_storage.c
+    fs/diskio.c
+    fs/fatfs/ff.c
 )
+
+# FatFs 是第三方源码（R0.14b），不参与本工程的 -Wall 洁癖。
+set_source_files_properties(fs/fatfs/ff.c PROPERTIES
+    COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-sign-compare;-Wno-unused-but-set-variable")
 
 # msh 命令属于「给 shell 用的适配」，只在有 shell 的 RTOS 后端编译。
 # 命令本身只调 module / driver 的接口，不碰寄存器（见各文件头注释）：
@@ -25,6 +31,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/spi_cmd.c
         msh/flash_cmd.c
         msh/sd_cmd.c
+        msh/fs_cmd.c
     )
 endif()
 
@@ -37,7 +44,10 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/drivers/spi
     ${CMAKE_SOURCE_DIR}/drivers/flash
     ${CMAKE_SOURCE_DIR}/drivers/sd
+    ${CMAKE_SOURCE_DIR}/drivers/block
     ${CMAKE_SOURCE_DIR}/modules/storage
+    ${CMAKE_SOURCE_DIR}/modules/fs
+    ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
 )
 
 # 让模块编译期获得 rtt_kernel 的 include（本工程模块虽不直接 include RT-Thread，

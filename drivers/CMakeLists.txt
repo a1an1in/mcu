@@ -9,8 +9,11 @@
 #   eeprom/ —— EEPROM 器件组件：at24c02.c（挂在 i2c 总线上，无 SoC 层）
 #   flash/ —— NOR FLASH 器件组件：w25q128.c（挂在 spi 总线上，无 SoC 层）
 #   sd/    —— SD 卡组件：sd.h/sd.c(协议) + sdio.h + stm32f1_sdio.c(SDIO 寄存器)
+#            + sd_blkdev.c（SD → 通用块设备）
+#   block/ —— 块设备组件：blkdev.h/blkdev.c（512B 块设备接口 + 静态注册表）
 # =============================================================================
 
+add_subdirectory(block)
 add_subdirectory(gpio)
 add_subdirectory(uart)
 add_subdirectory(net)

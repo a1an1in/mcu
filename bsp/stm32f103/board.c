@@ -10,8 +10,9 @@
  * 串口实现见 drivers/uart/stm32f1_uart.c：本文件只负责把 PCLK2 传进去，
  * 驱动内部不写死主频，换 HSE/PLL 也不用改驱动。
  *
- * 时钟方案：使用内部高速时钟 HSI（8MHz）作为系统时钟，不做 PLL 超频，
- * 降低对外部晶振的依赖，便于在多种 F103 板卡上跑通。
+ * 时钟方案：HSE 8MHz × PLL9 = 72MHz（AHB 72 / APB1 36 / APB2 72）；
+ * HSE 或 PLL 起振失败时自动留在 HSI 8MHz。各驱动都按 RCC_CFGR 现算频率，
+ * 换主频不用改驱动。原理与踩坑见 docs/stm32f1-clock.md。
  */
 #include <rtthread.h>
 
@@ -28,6 +29,7 @@
 #include "w25q128.h"
 #include "w25q128_config.h"
 #include "sd.h"
+#include "sd_blkdev.h"
 #include "stm32f1_sdio.h"
 
 /* ================= 板级事实 ================= */
@@ -356,6 +358,13 @@ static void board_sd_init(void)
     s_sd.host = host;
     s_sd.type = (uint8_t)SD_TYPE_UNKNOWN;
     sd_set_default(&s_sd);
+
+    /* 注册成块设备 "sd0"：只登记，不识别卡。文件系统第一次 f_mount 时
+     * 才通过 blkdev_init() 触发 sd_init()。 */
+    if (sd_blkdev_register(&s_sd, "sd0") == NULL)
+    {
+        rt_kprintf("[sd] 块设备注册失败（注册表满？）\n");
+    }
 }
 
 /* ================= 板级入口（由 rtthread_startup 调用） ================= */

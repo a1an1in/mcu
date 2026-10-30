@@ -62,11 +62,16 @@ drivers/
 │   ├── w25q128.c             器件协议（读 / 按页写 / 扇区擦除 / JEDEC / BUSY 轮询）
 │   └── w25q128_config.h      板级事实（片选 PB12、模式 3、速率、轮询上限）
 │
+├── block/
+│   ├── blkdev.h              块设备接口（与介质无关，512B 扇区 + 注册表）
+│   └── blkdev.c              静态注册表 / 惰性 init / 越界检查
+│
 ├── sd/
 │   ├── sd.h                  卡接口（sd_init / 块读写 / CID-CSD 解析）
 │   ├── sd.c                  卡协议（上电识别、容量、CMD17/18/24/25）
 │   ├── sdio.h                主机控制器接口（SoC 无关）
 │   ├── sd_config.h           板级事实（CMD/CLK/D0~D3 引脚、时钟）
+│   ├── sd_blkdev.h/.c        SD → 块设备适配（文件系统的入口）
 │   └── stm32f1_sdio.{h,c}    芯片实现（SDIO 寄存器 + FIFO 轮询搬运）
 │
 └── net/ch395/
@@ -174,7 +179,8 @@ Zephyr 侧不走 `drivers/CMakeLists.txt`（它是独立构建宿主），在
 | `drivers/eeprom/` | ✅ `at24c02.h` + `at24c02.c` + `at24c02_config.h` + `eeprom.h` + `eeprom.c` | AT24C02（256B / 8 字节每页）：自动按页切分写、ACK 轮询等写周期（不依赖 OS 延时）、越界检查。`eeprom.h` 是**与器件无关**的字节级接口：`struct eeprom_ops`（read/write，首参 `struct eeprom_dev *`）+ `eeprom_read/eeprom_write`（统一做参数与越界校验）。`at24c02_read/at24c02_write` 就是 ops 的实现（器件自己的 `struct at24c02_dev *` 从 `dev->ctx` 取），因此 `at24c02_eeprom_ops` 原样指向它们、没有转形状的壳，注册只需 `at24c02_register()`；新增器件照此在自己的 .c 里实现 ops + register 即可（核心与 `modules/storage` 不动）。无 OS 适配层、无 SoC 层（总线已由 i2c 组件抽象） |
 | `drivers/spi/` | ✅ `spi.h` + `spi_core.c` + `spi_config.h` + `stm32f1_spi.{h,c}` | 以 Linux 的 `spi_message` 为收发单位：`spi_message_init()` + `spi_message_add_tail()` 组段，`spi_sync()` 一次消息 = 一个 CS 时隙（进入拉片选、退出释放，段间支持 `delay_usecs` / `cs_change`）。`spi_write` / `spi_read` / `spi_write_then_read` 按 Linux 语义返回 0 / 负值。片选属于设备（`spi_device.cs_pin`，`SPI_CS_PIN(port,pin)` / `SPI_CS_NONE`），不属于总线；速率/模式/位序每次消息前由 SoC 层重新应用，同一条总线上不同器件可以各用各的参数。TIMEOUT 用自旋计数而非 OS 延时，驱动保持 OS 无关；总线锁走 `osal_mutex_*`，同样没有 OS 适配文件。与 I2C 的差异：SPI 没有 ACK，所以不做重试 |
 | `drivers/flash/` | ✅ `w25q128.h` + `w25q128.c` + `w25q128_config.h` | 板载 NM25Q128 / W25Q128（16MB，256B 页 / 4KB 扇区，SPI2 + PB12 片选，模式 3）：读、按 256 字节页切分写（跨页会回卷，已处理）、扇区擦除、整片擦除、JEDEC ID 校验，BUSY 用反复读状态寄存器轮询（不依赖 OS 延时）。`w25q128_write()` 要求区域已擦除（NOR 只能 1→0），`w25q128_write_erase()` 做读-改-写并支持跨扇区，4KB scratch 由调用方提供，驱动里不常驻大缓冲。无 SoC 层（总线已由 spi 组件抽象）、无 OS 层 |
-| `drivers/sd/` | ✅ `sd.h` + `sd.c` + `sdio.h` + `sd_config.h` + `stm32f1_sdio.{h,c}` | SD 卡走 **SDIO**（PC8~PC12 + PD2，不是 SPI）：CMD0 → CMD8 → ACMD41 识别，CMD2/3/9 取 CID/CSD 并算容量，CMD7 选中，ACMD6 切 4 位；块读写用 CMD17/18/24/25，写完用 CMD13 等卡内部编程结束。上板踩过的点：① ACMD41 的 R3 响应**没有 CRC7**，必须忽略 CCRCFAIL；② 写数据必须「先发命令 → 置 DTEN 并预填 FIFO」，提前 DTEN 会在命令前把数据打出去；③ FIFO 只有 128 字节，搬运全程要关中断，否则被 tcpip/etx 线程抢占导致 RXOVERR/TXUNDERR；④ **4 位对 CPU 速度很敏感**：4 位 24MHz = 12MB/s，搬运循环跟不上就溢出 —— 本工程靠 `-O2` + 72MHz 主频解决，慢速配置下把 `SD_BUS_WIDTH_4` 置 0 退回 1 位。实测：64GB SDHC，4 位 + 24MHz 读 MBR、末块写读比对均通过。**遗留优化**（CMD6 切高速模式 + DMA → 36MHz / 18MB/s）见 `docs/issues/sd-highspeed-dma-todo.md` |
+| `drivers/sd/` | ✅ `sd.h` + `sd.c` + `sdio.h` + `sd_config.h` + `sd_blkdev.{h,c}` + `stm32f1_sdio.{h,c}` | SD 卡走 **SDIO**（PC8~PC12 + PD2，不是 SPI）：CMD0 → CMD8 → ACMD41 识别，CMD2/3/9 取 CID/CSD 并算容量，CMD7 选中，ACMD6 切 4 位；块读写用 CMD17/18/24/25，写完用 CMD13 等卡内部编程结束。上板踩过的点：① ACMD41 的 R3 响应**没有 CRC7**，必须忽略 CCRCFAIL；② 写数据必须「先发命令 → 置 DTEN 并预填 FIFO」，提前 DTEN 会在命令前把数据打出去；③ FIFO 只有 128 字节，搬运全程要关中断，否则被 tcpip/etx 线程抢占导致 RXOVERR/TXUNDERR；④ **4 位对 CPU 速度很敏感**：4 位 24MHz = 12MB/s，搬运循环跟不上就溢出 —— 本工程靠 `-O2` + 72MHz 主频解决，慢速配置下把 `SD_BUS_WIDTH_4` 置 0 退回 1 位。实测：64GB SDHC，4 位 + 24MHz 读 MBR、末块写读比对均通过。`sd_blkdev.c` 把卡包成 `drivers/block` 的通用块设备（`sd0`），供文件系统使用；FatFs 分层见 `docs/fatfs.md`。**遗留优化**（CMD6 切高速模式 + DMA → 36MHz / 18MB/s）见 `docs/issues/sd-highspeed-dma-todo.md` |
+| `drivers/block/` | ✅ `blkdev.h` + `blkdev.c` | 与介质无关的 512B 块设备：`struct blkdev_ops`（init/read/write）+ 静态注册表（`BLKDEV_MAX = 4`，不分配内存、不加锁）。`blkdev_register()` 只登记、**不做 I/O**，识别介质推迟到 `blkdev_init()`（调度器起来之后），避免 board 初始化阶段碰 OS 对象。扇区固定 512，lba 是块地址；读写统一做未初始化与越界检查。文件系统侧只有 `modules/fs/diskio.c` 一个消费者，drive N ↔ 第 N 个块设备 |
 
 ## 9. 新增一个驱动时的检查清单
 

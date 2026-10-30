@@ -26,3 +26,7 @@ void xxx_start(void) {
 >
 > 现成的两个例子：`modules/led`（板载 LED，低电平点亮）与 `modules/key`
 > （按键，内部上/下拉 + 20ms 消抖，采样推进放在 `key_poll_once()` 便于 host 测试）。
+>
+> 第三方协议模块的范例见 `modules/fs`（FatFs）——它同样不碰 OS，靠
+> `drivers/block` 的块设备接口和 host 单测（RAM 盘）做到可离线验证，
+> 详见 `docs/fatfs.md`。

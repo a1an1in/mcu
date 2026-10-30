@@ -7,6 +7,7 @@
 #   sdio.h         主机控制器接口（SoC 无关）
 #   sd_config.h    板级事实：CMD/CLK/D0~D3 引脚、时钟
 #   stm32f1_sdio.c 芯片实现：STM32F1 SDIO 寄存器 + 引脚 + 轮询搬运
+#   sd_blkdev.c    SD → 通用块设备（drivers/block）的薄适配，给文件系统用
 #
 # 没有 OS 适配层：本组件不建线程、不加锁（一次块读写由调用方独占总线，
 # 目前只有 msh 命令用；将来多线程访问再加 osal_mutex，见 spi/i2c 的做法）。
@@ -15,10 +16,12 @@
 add_library(sd OBJECT
     sd.c
     stm32f1_sdio.c
+    sd_blkdev.c
 )
 
 target_include_directories(sd PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/drivers/block
 )
 
 # 总线互斥量走 osal（同时把 osal/include 传播进来）
