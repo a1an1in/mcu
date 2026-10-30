@@ -25,6 +25,8 @@
 #include "spi.h"
 #include "spi_config.h"
 #include "stm32f1_spi.h"
+#include "w25q128.h"
+#include "w25q128_config.h"
 
 /* ================= 板级事实 ================= */
 #define UART_BAUD       115200u
@@ -220,6 +222,35 @@ static void board_spi_init(void)
     }
 }
 
+/* ================= 板载 NOR FLASH（25Q128） =================
+ * 挂在 SPI2（spi0）上，片选 PB12。失败只告警：没有 FLASH 时系统照常跑，
+ * 只是 flash 相关功能不可用（msh 的 flash 命令会提示未注册）。
+ */
+static struct w25q128_dev s_flash;
+
+static void board_flash_init(void)
+{
+    struct spi_controller *spi0 = spi_get_controller(W25Q128_SPI_BUS);
+
+    if (spi0 == NULL)
+    {
+        rt_kprintf("[flash] SPI 总线未就绪，25Q128 不可用\n");
+        return;
+    }
+
+    /* 只绑总线，不读 ID —— 这个函数跑在 rt_hw_board_init 阶段，调度器还没起来，
+     * 碰总线会在加锁时写坏线程控制块（IMPRECISERR）。读 ID / 等 BUSY 推迟到
+     * 第一次真正访问（main 的 flash 自测、msh 的 flash 命令）。 */
+    if (w25q128_init(&s_flash, spi0,
+                     SPI_CS_PIN(W25Q128_CS_PORT_IDX, W25Q128_CS_PIN)) != 0)
+    {
+        rt_kprintf("[flash] 25Q128 绑定失败（参数非法）\n");
+        return;
+    }
+
+    w25q128_set_default(&s_flash);
+}
+
 /* ================= 板级入口（由 rtthread_startup 调用） ================= */
 void rt_hw_board_init(void)
 {
@@ -255,4 +286,7 @@ void rt_hw_board_init(void)
 
     /* 阶段 5：通用 SPI 总线（换板只改 spi_config.h） */
     board_spi_init();
+
+    /* 阶段 6：板载 NOR FLASH —— 挂在 spi0 上，片选 PB12 */
+    board_flash_init();
 }

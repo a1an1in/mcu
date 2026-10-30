@@ -5,12 +5,13 @@
  * 不动 stm32f1_spi.c。
  *
  * 本板（正点原子 战舰 STM32F103 V4）的 SPI 现状：
- *   SPI1（PA5/PA6/PA7）已经挂了 CH395Q、VS1053、W25Q128 三颗器件，
- *   由各自的驱动自己配置 —— 不适合再让通用 SPI 层去当「总线主人」。
- *   SPI2（PB13/PB14/PB15）在本板上引到 NRF24L01 座与排针，没有焊死器件，
- *   所以把它作为通用总线 spi0。
+ *   SPI1（PA5/PA6/PA7）上挂了 CH395Q 与 VS1053，由各自的驱动自己配置 ——
+ *   不适合再让通用 SPI 层去当「总线主人」。
+ *   SPI2（PB13/PB14/PB15）是板载 25Q128 的总线（片选 PB12，见
+ *   drivers/flash/w25q128_config.h），也就是本工程的通用总线 spi0：
+ *   这颗 NOR FLASH 就是 spi0 上的第一个设备。
  *
- * 注意两条线上挂多颗器件时，CS 归设备（struct spi_device.cs_pin），
+ * 注意一条线上挂多颗器件时，CS 归设备（struct spi_device.cs_pin），
  * 不归总线 —— 换器件只改设备的 cs_pin，不用动这里。
  */
 #ifndef DRIVERS_SPI_CONFIG_H__

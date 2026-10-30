@@ -6,6 +6,7 @@
 #   storage/ — modules/storage：EEPROM key-value 落盘布局与坏数据兜底
 #   i2c/   — drivers/i2c：bit-bang 时序（线上字节序列 / ACK / 重复 START）
 #   spi/   — drivers/spi：message 编排（CS 时隙 / 段顺序 / 错误路径）
+#   flash/ ? drivers/flash?25Q128 ???? / ?? / ?-?-?
 #
 # 用法：
 #   python3 tools/devops.py build --host   # 编译固件 + 编译 host 单测（只编译）
@@ -26,3 +27,4 @@ add_subdirectory(hw)
 add_subdirectory(storage)
 add_subdirectory(i2c)
 add_subdirectory(spi)
+add_subdirectory(flash)

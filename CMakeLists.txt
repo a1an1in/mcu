@@ -62,6 +62,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/drivers/i2c
     ${CMAKE_SOURCE_DIR}/drivers/spi
     ${CMAKE_SOURCE_DIR}/drivers/eeprom
+    ${CMAKE_SOURCE_DIR}/drivers/flash
     ${CMAKE_SOURCE_DIR}/drivers
     ${CMAKE_SOURCE_DIR}/bsp/${BOARD}
 )
@@ -125,6 +126,7 @@ add_executable(stm32f103.elf
     $<TARGET_OBJECTS:i2c>
     $<TARGET_OBJECTS:spi>
     $<TARGET_OBJECTS:eeprom>
+    $<TARGET_OBJECTS:flash>
     $<TARGET_OBJECTS:osal>
     $<TARGET_OBJECTS:modules>
     $<TARGET_OBJECTS:applications>

@@ -7,6 +7,7 @@
 #   i2c/   —— I2C 组件：i2c.h(接口) + i2c_core.c + i2c_bit.c + stm32f1_i2c.c
 #   spi/   —— SPI 组件：spi.h(接口, spi_message/spi_sync) + spi_core.c + stm32f1_spi.c
 #   eeprom/ —— EEPROM 器件组件：at24c02.c（挂在 i2c 总线上，无 SoC 层）
+#   flash/ —— NOR FLASH 器件组件：w25q128.c（挂在 spi 总线上，无 SoC 层）
 # =============================================================================
 
 add_subdirectory(gpio)
@@ -15,3 +16,4 @@ add_subdirectory(net)
 add_subdirectory(i2c)
 add_subdirectory(spi)
 add_subdirectory(eeprom)
+add_subdirectory(flash)

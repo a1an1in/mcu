@@ -241,6 +241,11 @@ int spi_write_then_read(struct spi_device *spi,
  *
  * ⚠️ 这两个函数只用于「上层想自己把总线踩住一段时间」的场景，且此时
  * **不能再调用 spi_sync**（会二次加锁，非递归互斥量会死锁）。
+ *
+ * ⚠️ 同理，**不要在 rt_hw_board_init 阶段访问总线**：那时调度器还没起来，
+ *    osal_mutex_lock() 会去写一个还不存在的线程控制块（板上表现为
+ *    BusFault/IMPRECISERR 直接死机）。板级只负责 spi_add_controller()
+ *    与建设备，第一次真正的传输留到 main / 线程里。
  */
 int  spi_bus_lock(struct spi_controller *ctlr);
 void spi_bus_unlock(struct spi_controller *ctlr);

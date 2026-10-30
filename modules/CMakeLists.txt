@@ -17,11 +17,13 @@ add_library(modules OBJECT
 #   msh/storage_cmd.c   eeprom <get|set|save|load>
 #   msh/i2c_cmd.c       i2c <scan|read|write|smbtest>
 #   msh/spi_cmd.c       spi <list|write|read|loop>
+#   msh/flash_cmd.c     flash <info|read|erase|write|test>
 if(RTOS STREQUAL "rt-thread")
     target_sources(modules PRIVATE
         msh/storage_cmd.c
         msh/i2c_cmd.c
         msh/spi_cmd.c
+        msh/flash_cmd.c
     )
 endif()
 
@@ -32,6 +34,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/drivers
     ${CMAKE_SOURCE_DIR}/drivers/i2c
     ${CMAKE_SOURCE_DIR}/drivers/spi
+    ${CMAKE_SOURCE_DIR}/drivers/flash
     ${CMAKE_SOURCE_DIR}/modules/storage
 )
 
