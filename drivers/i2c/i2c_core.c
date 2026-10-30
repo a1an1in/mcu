@@ -8,14 +8,20 @@
  *   - 寄存器读写（i2c_reg_read / i2c_reg_write，裸 I2C，非 SMBus）
  *   - i2c_probe_device()
  *
- * 本文件不碰任何寄存器，也没有 OS 依赖。
+ * 本文件不碰任何寄存器，也不含任何 RTOS 头（总线锁走 OSAL）。
  */
+#include <osal.h>
+
 #include "i2c.h"
 
 /* 一个项目里挂几条 I2C 总线，够用就行 */
 #define I2C_ADAPTER_MAX     4
 
+/* 一次传输（含重试）最长占用总线的时间 */
+#define I2C_LOCK_TIMEOUT_MS 1000u
+
 static struct i2c_adapter *s_adapters[I2C_ADAPTER_MAX];
+static osal_mutex_t s_lock[I2C_ADAPTER_MAX];
 
 /* ================= 注册表 ================= */
 
@@ -41,6 +47,15 @@ int i2c_add_adapter(struct i2c_adapter *adap)
     {
         if (s_adapters[i] == 0)
         {
+            /* 顺手把这条总线的互斥量建好：注册发生在板级单线程阶段，
+             * 不存在「首次加锁时两个线程各建一把」的竞态 */
+            if (s_lock[i] == OSAL_NULL)
+            {
+                if (osal_mutex_create(&s_lock[i]) != OSAL_OK)
+                {
+                    return I2C_ERR_IO;
+                }
+            }
             s_adapters[i] = adap;
             return (int)i;
         }
@@ -77,19 +92,38 @@ int i2c_adapter_nr(struct i2c_adapter *adap)
     return I2C_ERR_PARAM;
 }
 
-/* ================= OS 钩子默认实现 =================
- * 空实现，保证裸机 / 单线程也能用。
- * rtthread_i2c.c 用互斥量提供同名强符号，链接时覆盖这里。
+/* ================= 总线锁 =================
+ * 每条总线一把互斥量，用 OSAL 的 osal_mutex_* 实现 —— 所以本文件不含任何
+ * RTOS 头，换 OS/裸机只换 osal 后端，不需要再有 rtthread_i2c.c 这类适配文件。
+ *
+ * 锁在 i2c_add_adapter() 里创建：那时是板级单线程阶段，不会出现「两个线程
+ * 同时首次加锁、各建一把锁」的竞态；建互斥量只分配对象、不依赖当前线程，
+ * 调度器起来之前调用也安全。
  */
-I2C_WEAK int i2c_bus_lock(struct i2c_adapter *adap)
+int i2c_bus_lock(struct i2c_adapter *adap)
 {
-    (void)adap;
+    int nr = i2c_adapter_nr(adap);
+
+    if ((nr < 0) || (s_lock[nr] == OSAL_NULL))
+    {
+        return I2C_ERR_PARAM;
+    }
+    if (osal_mutex_lock(s_lock[nr], I2C_LOCK_TIMEOUT_MS) != OSAL_OK)
+    {
+        return I2C_ERR_TIMEOUT;
+    }
     return 0;
 }
 
-I2C_WEAK void i2c_bus_unlock(struct i2c_adapter *adap)
+void i2c_bus_unlock(struct i2c_adapter *adap)
 {
-    (void)adap;
+    int nr = i2c_adapter_nr(adap);
+
+    if ((nr < 0) || (s_lock[nr] == OSAL_NULL))
+    {
+        return;
+    }
+    osal_mutex_unlock(s_lock[nr]);
 }
 
 /* ================= 传输 ================= */
@@ -105,9 +139,11 @@ int i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
         return I2C_ERR_PARAM;
     }
 
-    if (i2c_bus_lock(adap) != 0)
+    /* 未注册的 adapter（PARAM）或等不到锁（TIMEOUT）都直接返回，不碰硬件 */
+    ret = i2c_bus_lock(adap);
+    if (ret != 0)
     {
-        return I2C_ERR_TIMEOUT;
+        return ret;
     }
 
     /* 首次 + retries 次重试。只对「没拿到 num 条成功」重试，

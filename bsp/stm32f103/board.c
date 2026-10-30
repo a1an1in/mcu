@@ -22,6 +22,9 @@
 #include "at24c02_config.h"
 #include "eeprom.h"
 #include "eeprom_storage.h"
+#include "spi.h"
+#include "spi_config.h"
+#include "stm32f1_spi.h"
 
 /* ================= 板级事实 ================= */
 #define UART_BAUD       115200u
@@ -83,6 +86,13 @@ static unsigned long rcc_pclk2_hz(void)                   /* PCLK2 = APB2 */
     static const unsigned long ppre2_div[8] = { 1,1,1,1, 2,4,8,16 };
     unsigned long div = (RCC_CFGR >> 11) & 0x7u;
     return rcc_ahb_hz() / ppre2_div[div];
+}
+
+static unsigned long rcc_pclk1_hz(void)                   /* PCLK1 = APB1 */
+{
+    static const unsigned long ppre1_div[8] = { 1,1,1,1, 2,4,8,16 };
+    unsigned long div = (RCC_CFGR >> 8) & 0x7u;
+    return rcc_ahb_hz() / ppre1_div[div];
 }
 
 /* ================= 控制台钩子（实现委托 drivers/uart） ================= */
@@ -188,6 +198,28 @@ static void board_storage_init(void)
     eeprom_storage_set_default(es);
 }
 
+/* ================= SPI 总线 =================
+ * 本板 SPI1 已被 CH395 / VS1053 / W25Q128 占用（各自驱动自己配），
+ * 通用总线用 spi_config.h 里指定的那一路（默认 SPI2，PB13/14/15）。
+ * 这里只建「总线」，不建任何设备 —— 片选属于设备，谁用谁在 board/驱动里
+ * 用 SPI_CS_PIN(port,pin) 填一个 struct spi_device 即可。
+ */
+static void board_spi_init(void)
+{
+    static const struct stm32f1_spi_pins pins =
+    {
+        SPI0_SCK_PORT_IDX,  SPI0_SCK_PIN,
+        SPI0_MISO_PORT_IDX, SPI0_MISO_PIN,
+        SPI0_MOSI_PORT_IDX, SPI0_MOSI_PIN,
+    };
+    unsigned long pclk = (SPI0_HW == 1u) ? rcc_pclk2_hz() : rcc_pclk1_hz();
+
+    if (stm32f1_spi_init(SPI0_HW, (uint32_t)pclk, (uint32_t)rcc_ahb_hz(), &pins) == NULL)
+    {
+        rt_kprintf("[spi] SPI%u 初始化失败，SPI 总线不可用\n", (unsigned int)SPI0_HW);
+    }
+}
+
 /* ================= 板级入口（由 rtthread_startup 调用） ================= */
 void rt_hw_board_init(void)
 {
@@ -220,4 +252,7 @@ void rt_hw_board_init(void)
 
     /* 阶段 4：配置存储 —— EEPROM → 适配层 → module 默认实例（msh 的 eeprom_* 用它） */
     board_storage_init();
+
+    /* 阶段 5：通用 SPI 总线（换板只改 spi_config.h） */
+    board_spi_init();
 }

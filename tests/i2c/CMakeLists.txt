@@ -12,10 +12,12 @@
 
 add_executable(test_i2c_bit
     test_i2c_bit.c
+    fake_osal.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/i2c/i2c_bit.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/i2c/i2c_core.c)
 
 target_include_directories(test_i2c_bit PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/i2c)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../drivers/i2c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../osal/include)
 
 add_test(NAME i2c_bit_host COMMAND test_i2c_bit)

@@ -318,6 +318,10 @@ static void test_nack_releases_bus(void)
 
 int main(void)
 {
+    /* i2c_core 的总线锁按 adapter 编号索引，所以先把假 adapter 注册进来
+     * （正常运行时这一步由 stm32f1_i2c_gpio_init() 在板级完成） */
+    CHECK(i2c_add_adapter(&s_adap) == 0);
+
     test_reg_write();
     test_reg_write_block();
     test_reg_read();

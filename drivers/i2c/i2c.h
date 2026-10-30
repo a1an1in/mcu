@@ -3,11 +3,13 @@
  *
  * 分层（见 docs/drivers.md）：
  *   i2c.h          接口，芯片 / OS 无关
- *   i2c_core.c     通用逻辑：adapter 注册表、i2c_transfer 重试、寄存器读写
+ *   i2c_core.c     通用逻辑：adapter 注册表、总线锁、i2c_transfer 重试、寄存器读写
  *   i2c_bit.c      通用 bit-bang 时序状态机（START / STOP / 收发字节 / ACK / 时钟延展）
- *   stm32f1_i2c.c  芯片实现：只提供引脚原语 + µs 延时
- *   rtthread_i2c.c OS 适配：总线互斥量 + msh 调试命令
  *   smbus.h/.c     严格 SMBus 协议层（Quick/Send/Receive/Byte/Word/Block/PEC）
+ *   stm32f1_i2c.c  芯片实现：只提供引脚原语 + µs 延时
+ *
+ * 没有 OS 适配文件：总线互斥量直接用 osal_mutex_*（i2c_core.c），
+ * 本组件不含任何 RTOS 头；msh 调试命令在 modules/msh/i2c_cmd.c。
  *
  * 本文件是「I2C 总线」层：只管怎么把一串 i2c_msg 送到总线上。
  * 「SMBus 协议」层见 smbus.h —— 那一层才有 PEC、byte-count、小端字序等规范约束。
@@ -177,9 +179,13 @@ int i2c_reg_write(struct i2c_adapter *adap, uint16_t addr, uint8_t reg,
 /* 地址探测：只发地址看是否有 ACK。返回 0 = 器件在场，负值 = 不在 */
 int i2c_probe_device(struct i2c_adapter *adap, uint16_t addr);
 
-/* ============================ OS 适配钩子 ============================
- * i2c_core.c 里是空实现的 weak 版本；rtthread_i2c.c 用互斥量覆盖，
- * 保证多线程下同一条总线不会互相踩时序。
+/* ============================ 总线锁 ============================
+ * 一次传输期间独占这条总线，保证多线程下不会互相踩时序。
+ * 实现走 OSAL 的 osal_mutex_*（见 i2c_core.c），互斥量在
+ * i2c_add_adapter() 里建好 —— 驱动不需要任何 RTOS 头，
+ * 正常调用 i2c_transfer/i2c_write/i2c_read 时自动加解锁。
+ *
+ * ⚠️ 手动 i2c_bus_lock() 之后不能再调 i2c_transfer（会二次加锁死锁）。
  */
 int  i2c_bus_lock(struct i2c_adapter *adap);
 void i2c_bus_unlock(struct i2c_adapter *adap);
