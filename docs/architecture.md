@@ -24,7 +24,8 @@
 ## 2. 硬件假设（默认目标板：正点原子战舰 STM32F103 V4）
 
 - 系统时钟：HSE 8MHz × PLL9 = **72MHz**（AHB 72 / APB1 36 / APB2 72）；
-  HSE 起振失败时自动退回内部 HSI 8MHz（各驱动都按 RCC 现算频率，不用改代码）
+  HSE 起振失败时自动退回内部 HSI 8MHz（各驱动都按 RCC 现算频率，不用改代码）。
+  原理、寄存器位定义、切换顺序与踩过的坑见 `docs/stm32f1-clock.md`
 - UART1 `PA9(TX)`：`115200-8-N-1`，作 `rt_kprintf`/`osal_printf` 控制台输出
 - 板载 LED：`DS0 → PB5`（红）、`DS1 → PE5`（绿），均为**低电平点亮**
 - 板载按键：`KEY0 → PE4`、`KEY1 → PE3`、`KEY2 → PE2`（按下接地，低有效）、
