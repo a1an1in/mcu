@@ -22,6 +22,8 @@
 - **音频**：`modules/music`（播放线程）+ `drivers/audio`（VS1053B，SPI1 与 CH395 共用），
   用法与硬件连线见 `docs/music-player.md`；**录音**见 `modules/recorder` 与
   `docs/recorder.md`（WAV / 8kHz / 16bit / 单声道）。
+- **大模型对话**：`modules/ai`（明文 HTTP 客户端）+ `tools/llm_bridge.py`（PC 端
+  HTTPS 转发，API Key 不落板子），用法见 `docs/ai.md`。
 - **OSAL**：定义线程 / 信号量 / 互斥量 / 消息队列 / 定时器 / 动态内存 / 打印的统一接口。
 - **port/<os>**：把 OSAL 接口映射到具体 RTOS（当前为 RT-Thread），每一套适配层是独立的。
 - 换 RTOS 时，只需在 `rtos/` 挂新内核、新增一套 `osal/port/<os>/` 实现，顶层 `-DRTOS=` 切换。

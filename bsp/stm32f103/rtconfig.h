@@ -76,6 +76,7 @@
 #define FINSH_USING_SYMTAB         /* 支持 MSH_CMD_EXPORT 导出命令表 */
 #define FINSH_USING_HISTORY        /* 命令历史：终端 ↑/↓ 或板载按键都走它 */
 #define FINSH_HISTORY_LINES     8  /* 保留最近 8 条（每条 FINSH_CMD_SIZE 字节） */
+#define FINSH_CMD_SIZE        256  /* 单行命令上限（默认 80；ai ask 需要长一点） */
 
 /* ===== 网络：lwIP v2.1.2 + netdev ===== */
 #define RT_USING_LWIP              /* 启用 lwIP TCP/IP 协议栈 */

@@ -10,6 +10,7 @@
 #   sd/    — drivers/sd：CSD/CID 解析（容量、厂商、生产日期）
 #   fs/    — drivers/block + modules/fs：块设备注册表、FatFs 格式化/读写/重挂载
 #   recorder/ — modules/recorder：WAV 头生成与回填
+#   ai/    — modules/ai：HTTP 请求构造（板子只发明文 HTTP 到 PC 网关）
 #
 # 用法：
 #   python3 tools/devops.py build --host   # 编译固件 + 编译 host 单测（只编译）
@@ -34,3 +35,4 @@ add_subdirectory(flash)
 add_subdirectory(sd)
 add_subdirectory(fs)
 add_subdirectory(recorder)
+add_subdirectory(ai)
