@@ -81,8 +81,7 @@ static FRESULT rm_tree(TCHAR *buf, size_t len, size_t buf_size, int depth)
     return f_unlink(buf);
 }
 
-FRESULT fs_remove_tree(const TCHAR *path, TCHAR *buf, UINT buf_size)
-{
+FRESULT fs_remove_tree(const TCHAR *path, TCHAR *buf, UINT buf_size){
     FILINFO fno;
     FRESULT fr;
     size_t len;
@@ -119,4 +118,57 @@ FRESULT fs_remove_tree(const TCHAR *path, TCHAR *buf, UINT buf_size)
     }
 
     return rm_tree(buf, len, buf_size, 0);
+}
+
+int fs_build_path(const char *in, char *out, UINT size)
+{
+    size_t len;
+
+    if ((in == NULL) || (out == NULL) || (size < 4u))
+    {
+        return -1;
+    }
+
+    if ((in[0] != '\0') && (in[1] == ':'))
+    {
+        /* 已经带盘符："0:/a.txt" → 原样 */
+        len = strlen(in);
+        if ((len + 1u) > size)
+        {
+            return -1;
+        }
+        memcpy(out, in, len + 1u);
+    }
+    else
+    {
+        /* 其余统一补 "0:"：
+         *   "/a.txt" → "0:/a.txt"（绝对）
+         *   "a.txt"  → "0:a.txt" （相对当前目录，由 FatFs 解析）
+         *   ""       → "0:"      （当前目录本身） */
+        len = strlen(in);
+        if ((len + 3u) > size)
+        {
+            return -1;
+        }
+
+        out[0] = '0';
+        out[1] = ':';
+        if (len != 0u)
+        {
+            memcpy(&out[2], in, len + 1u);
+        }
+        else
+        {
+            out[2] = '\0';
+        }
+    }
+
+    /* 去掉尾部 '/'，但保留 "0:/" 这种根 */
+    len = strlen(out);
+    while ((len > 3u) && (out[len - 1u] == '/'))
+    {
+        out[--len] = '\0';
+    }
+
+    return 0;
 }

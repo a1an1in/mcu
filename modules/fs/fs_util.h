@@ -18,6 +18,17 @@ extern "C" {
  * 8 层留足余量；正常目录不会这么深（再深会返回 FR_INVALID_PARAMETER）。 */
 #define FS_REMOVE_MAX_DEPTH     8
 
+/* 把用户输入的路径规范成 FatFs 的 "盘符:路径" 形式：
+ *
+ *   "/music"    → "0:/music"      （绝对，从根开始）
+ *   "music"     → "0:music"       （相对当前目录，配合 fs cd）
+ *   "0:/music"  → "0:/music"      （已带盘符，原样）
+ *   ""          → "0:"            （当前目录本身）
+ *   "/music/"   → "0:/music"      （去掉尾部 '/'）
+ *
+ * 返回 0 成功；-1 表示空指针、缓冲太小或路径太长。 */
+int fs_build_path(const char *in, char *out, UINT size);
+
 /* 递归删除 path（文件直接删；目录则先清空再删自己）。
  *
  * path 必须带盘符，如 "0:/music"（不能是根目录 "0:"）。
@@ -28,6 +39,8 @@ extern "C" {
  * FR_INVALID_PARAMETER（参数错或目录太深）/ 底层错误。
  */
 FRESULT fs_remove_tree(const TCHAR *path, TCHAR *buf, UINT buf_size);
+
+int fs_build_path(const char *in, char *out, UINT size);
 
 #ifdef __cplusplus
 }

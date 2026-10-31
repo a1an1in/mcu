@@ -341,6 +341,94 @@ static void test_partition_select(void)
     CHECK_EQ(f_mount(&s_fs, "0:", 1), FR_OK);
 }
 
+static void test_build_path(void)
+{
+    char b[32];
+
+    CHECK_EQ(fs_build_path("/a.txt", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:/a.txt") == 0);
+
+    /* 没有前导 / 就是相对当前目录（配合 fs cd） */
+    CHECK_EQ(fs_build_path("a.txt", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:a.txt") == 0);
+
+    CHECK_EQ(fs_build_path("0:/a.txt", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:/a.txt") == 0);
+
+    /* 空路径 = 当前目录 */
+    CHECK_EQ(fs_build_path("", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:") == 0);
+
+    CHECK_EQ(fs_build_path("/music/", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:/music") == 0);
+
+    CHECK_EQ(fs_build_path("music/", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:music") == 0);
+
+    CHECK_EQ(fs_build_path("0:/", b, sizeof(b)), 0);
+    CHECK(strcmp(b, "0:/") == 0);
+
+    /* 缓冲不够 / 空指针 */
+    CHECK_EQ(fs_build_path("/abcdef", b, 8), -1);
+    CHECK_EQ(fs_build_path(NULL, b, sizeof(b)), -1);
+    CHECK_EQ(fs_build_path("/a", NULL, 8), -1);
+}
+
+static int streq_ci(const char *a, const char *b)
+{
+    while ((*a != '\0') && (*b != '\0'))
+    {
+        char ca = ((*a >= 'a') && (*a <= 'z')) ? (char)(*a - 0x20) : *a;
+        char cb = ((*b >= 'a') && (*b <= 'z')) ? (char)(*b - 0x20) : *b;
+
+        if (ca != cb)
+        {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return (*a == '\0') && (*b == '\0');
+}
+
+static void test_chdir(void)
+{
+    FIL fil;
+    FILINFO fno;
+    FRESULT fr;
+    UINT bw = 0;
+    char cwd[64];
+
+    CHECK_EQ(f_mkdir("0:/cdtest"), FR_OK);
+
+    /* 切到子目录 */
+    CHECK_EQ(f_chdir("0:/cdtest"), FR_OK);
+    CHECK_EQ(f_getcwd(cwd, sizeof(cwd)), FR_OK);
+    CHECK(streq_ci(cwd, "/cdtest"));
+
+    /* 相对路径：在当前目录下创建、查询 */
+    CHECK_EQ(f_open(&fil, "rel.txt", FA_CREATE_ALWAYS | FA_WRITE), FR_OK);
+    CHECK_EQ(f_write(&fil, "rel", 3, &bw), FR_OK);
+    CHECK_EQ(f_close(&fil), FR_OK);
+    CHECK_EQ(f_stat("rel.txt", &fno), FR_OK);
+    CHECK_EQ(fno.fsize, 3);
+
+    /* .. 回上一级 */
+    CHECK_EQ(f_chdir(".."), FR_OK);
+    CHECK_EQ(f_getcwd(cwd, sizeof(cwd)), FR_OK);
+    CHECK(streq_ci(cwd, "/"));
+
+    /* 当前目录本身不能被删除 */
+    CHECK_EQ(f_chdir("0:/cdtest"), FR_OK);
+    fr = f_unlink("0:");
+    CHECK((fr == FR_INVALID_NAME) || (fr == FR_DENIED));
+
+    /* 回根目录后递归删除 */
+    CHECK_EQ(f_chdir("0:/"), FR_OK);
+    CHECK_EQ(fs_remove_tree("0:/cdtest", s_tree, sizeof(s_tree)), FR_OK);
+    CHECK_EQ(f_chdir("0:/"), FR_OK);
+}
+
 static void test_remove_tree(void)
 {
     FIL fil;
@@ -437,8 +525,10 @@ int main(void)
     test_registry(dev);
     test_blkdev_io(dev);
     test_diskio();
+    test_build_path();
     test_format_and_write();
     test_partition_select();
+    test_chdir();
     test_remove_tree();
     test_remount_and_remove();
     test_unformatted();

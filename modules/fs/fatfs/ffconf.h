@@ -72,8 +72,13 @@
 #define FF_SFN_BUF		12
 /* FF_USE_LFN = 0 时以上四项都不生效，保持默认值即可。 */
 
-#define FF_FS_RPATH		0
-/* 相对路径（f_chdir/f_getcwd）。本工程一律用绝对路径 "0:/xxx"。 */
+#define FF_FS_RPATH		2
+/* 2：启用相对路径 + f_chdir/f_chdrive + f_getcwd。
+/  本工程需要 `fs cd`，所以不能再是 0：
+/    0 = 不支持相对路径，所有路径都相对根
+/    1 = f_chdir/f_chdrive
+/    2 = 再加 f_getcwd（`fs pwd` 要用）
+/  注意：路径不以 '/' 开头时，FatFs 从「当前目录」(fs->cdir) 开始解析。 */
 
 /*---------------------------------------------------------------------------/
 / 卷与扇区

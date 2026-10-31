@@ -150,7 +150,7 @@ blkdev_register("flash0", &flash_ops, &s_flash, NULL);
 | `FF_USE_LABEL` / `FF_USE_CHMOD` / `FF_USE_EXPAND` / `FF_USE_FORWARD` / `FF_USE_FIND` / `FF_USE_FASTSEEK` | 0 | 用不上，省 Flash/RAM |
 | `FF_CODE_PAGE` | 437 | 关 LFN 后只影响 8.3 短名的 OEM 解释，ASCII 够用 |
 | `FF_USE_LFN` | 0 | 只支持 8.3 短名 |
-| `FF_FS_RPATH` | 0 | 一律绝对路径 `0:/...` |
+| `FF_FS_RPATH` | 2 | 支持相对路径 + `f_chdir` + `f_getcwd`（`fs cd` / `fs pwd`） |
 | `FF_VOLUMES` | 1 | drive 0 = 第 0 个块设备 |
 | `FF_MULTI_PARTITION` | 1 | 允许指定分区：`VolToPart[0].pt` 运行时可改（0=自动找第一个 FAT 分区，1~4=强制） |
 | `FF_MIN_SS` / `FF_MAX_SS` | 512 / 512 | 固定 512，不要求 `GET_SECTOR_SIZE` |
@@ -179,7 +179,9 @@ fs part                 打印 MBR 分区表（类型 / 起始 LBA / 大小）
 fs mount [pt]           挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）
 fs umount               卸载
 fs mkfs [pt]            格式化（pt 省略=重写整盘分区表；pt=1~4 只格式化该分区）
-fs ls [path]            列目录（默认 /）
+fs ls [path]            列目录（默认当前目录）
+fs cd [path]            切换当前目录（省略=根目录）
+fs pwd                  显示当前目录
 fs cat <path>           打印文本文件（最多 4KB）
 fs write <path> <text…> 写文本文件（覆盖）
 fs mkdir <path>         建目录
@@ -187,7 +189,16 @@ fs rm [-r] <path>       删除文件/空目录；-r 递归删除整棵目录
 fs df                   总容量 / 剩余空间 / FAT 类型
 ```
 
-路径可以写 `/dir/a.txt`（自动补成 `0:/dir/a.txt`），也可以写完整 `0:/dir/a.txt`。
+路径规则（`fs cd` 之后相对路径以当前目录为基准）：
+
+| 写法 | 含义 |
+|---|---|
+| `/music/a.mp3` | 绝对路径，从根目录开始 |
+| `music/a.mp3` | 相对当前目录 |
+| `0:/music/a.mp3` | 带盘符的完整写法（等价于第一种） |
+| `..` / `.` | 上一级 / 当前目录 |
+
+`fs pwd` 显示当前目录（单卷时输出 `/MUSIC` 这种形式，不带 `0:` 前缀）。
 
 典型流程：
 
@@ -251,6 +262,8 @@ blkdev_register → blkdev_init → diskio → f_mkfs → f_mount
   `FR_NO_FILESYSTEM`、恢复 `pt=0` 自动搜索；
 - **递归删除**：非空目录 `f_unlink` 报 `FR_DENIED` → `fs_remove_tree()` 清空后
   删除；文件、尾部带 `/`、根目录拒绝、坏参数都覆盖；
+- **当前目录**：`f_chdir` / `f_getcwd`、相对路径读写、`..` 回上级、当前目录
+  不能被 `f_unlink` 删除；
 - 卸载再挂载内容仍在（证明写真的落到了介质，而不是只改了缓存）。
 
 运行：
@@ -277,7 +290,7 @@ docker run --rm -v "$PWD:/work" -w /work stm32f103-dev sh -c \
 
 | 项目 | 接入前 | 接入后 | 增量 |
 |---|---|---|---|
-| Flash | 148.9 KB | 164.9 KB | **+16.0 KB**（FatFs 本体 + 胶水 + msh 命令） |
+| Flash | 148.9 KB | 165.8 KB | **+16.9 KB**（FatFs 本体 + 胶水 + msh 命令） |
 | RAM | 24.4 KB | 30.0 KB | **+5.6 KB**（mkfs 4KB 工作缓冲 + cat 512B + FATFS/FIL） |
 
 RAM 增量主要来自 `fs_cmd.c` 里的静态缓冲：

@@ -9,7 +9,9 @@
  *   fs mount [pt]      挂载 0: 号卷（pt=1~4 指定分区，省略=自动）
  *   fs umount          卸载
  *   fs mkfs [pt]       格式化（省略 pt = 重写整盘分区表！会清数据）
- *   fs ls [path]       列目录，默认 "/"
+ *   fs ls [path]       列目录，默认当前目录
+ *   fs cd [path]       切换当前目录（省略=根目录）
+ *   fs pwd             显示当前目录
  *   fs cat <path>      打印文本文件（最多 4KB）
  *   fs write <path> <text...>  写文本文件（覆盖），例: fs write /a.txt hello
  *   fs mkdir <path>    建目录
@@ -72,34 +74,10 @@ static const char *fr_str(FRESULT fr)
     }
 }
 
-/* "/a.txt" → "0:/a.txt"；已经带盘符的原样保留。 */
+/* 路径规范化统一在 modules/fs/fs_util.c 的 fs_build_path()，这里只做转发 */
 static int fs_path(const char *in, char *out)
 {
-    const char *p = in;
-
-    if ((p == NULL) || (p[0] == '\0'))
-    {
-        p = "/";
-    }
-
-    if (p[0] == '/')
-    {
-        if ((strlen(p) + 2u) >= FS_PATH_MAX)
-        {
-            return -1;
-        }
-        out[0] = FS_DRIVE[0];
-        out[1] = ':';
-        strcpy(&out[2], p);
-        return 0;
-    }
-
-    if (strlen(p) >= FS_PATH_MAX)
-    {
-        return -1;
-    }
-    strcpy(out, p);
-    return 0;
+    return fs_build_path(in, out, FS_PATH_MAX);
 }
 
 static void fs_usage(void)
@@ -110,7 +88,9 @@ static void fs_usage(void)
                "  fs mount [pt]       挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）\n"
                "  fs umount           卸载\n"
                "  fs mkfs [pt]        格式化（pt 省略=重写整盘分区表！会清数据）\n"
-               "  fs ls [path]        列目录，默认 /\n"
+               "  fs ls [path]        列目录，默认当前目录\n"
+               "  fs cd [path]        切换目录，省略=根目录\n"
+               "  fs pwd              显示当前目录\n"
                "  fs cat <path>       打印文本文件\n"
                "  fs write <path> <text...>  写文本文件（覆盖）\n"
                "  fs mkdir <path>     建目录\n"
@@ -342,7 +322,7 @@ static void fs_do_ls(const char *path)
     unsigned int files = 0;
     unsigned long bytes = 0;
 
-    if (fs_path((path == NULL) ? "/" : path, p) != 0)
+    if (fs_path((path == NULL) ? "" : path, p) != 0)
     {
         rt_kprintf("路径太长\n");
         return;
@@ -498,6 +478,39 @@ static void fs_do_write(const char *path, int argc, char **argv)
     rt_kprintf("写入 %s，%u 字节\n", p, written);
 }
 
+static void fs_do_pwd(void)
+{
+    char cwd[FS_PATH_MAX];
+    FRESULT fr = f_getcwd(cwd, sizeof(cwd));
+
+    if (fr != FR_OK)
+    {
+        rt_kprintf("取当前目录失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
+        return;
+    }
+    rt_kprintf("%s\n", cwd);
+}
+
+static void fs_do_cd(const char *path)
+{
+    char p[FS_PATH_MAX];
+    FRESULT fr;
+
+    if (fs_path((path == NULL) ? "/" : path, p) != 0)
+    {
+        rt_kprintf("路径太长\n");
+        return;
+    }
+
+    fr = f_chdir(p);
+    if (fr != FR_OK)
+    {
+        rt_kprintf("切换目录失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
+        return;
+    }
+    fs_do_pwd();
+}
+
 static void fs_do_mkdir(const char *path)
 {
     FRESULT fr;
@@ -649,7 +662,15 @@ static int fs(int argc, char **argv)
 
     if (strcmp(sub, "ls") == 0)
     {
-        fs_do_ls((argc > 2) ? argv[2] : "/");
+        fs_do_ls((argc > 2) ? argv[2] : NULL);
+    }
+    else if (strcmp(sub, "cd") == 0)
+    {
+        fs_do_cd((argc > 2) ? argv[2] : NULL);
+    }
+    else if (strcmp(sub, "pwd") == 0)
+    {
+        fs_do_pwd();
     }
     else if (strcmp(sub, "cat") == 0)
     {
@@ -668,9 +689,10 @@ static int fs(int argc, char **argv)
         const char *p = (argc > 2) ? argv[2] : NULL;
         int recursive = 0;
 
-        if ((p != NULL) && (strcmp(p, "-r") == 0))
+        /* 支持 -r / -rf / -fr / -f（-f 只是兼容 Unix 习惯，这里没有实际作用） */
+        if ((p != NULL) && (p[0] == '-') && (p[1] != '\0'))
         {
-            recursive = 1;
+            recursive = (strchr(p, 'r') != NULL) ? 1 : 0;
             p = (argc > 3) ? argv[3] : NULL;
         }
         fs_do_rm(p, recursive);
@@ -690,4 +712,4 @@ static int fs(int argc, char **argv)
     }
     return 0;
 }
-MSH_CMD_EXPORT(fs, fs <dev|part|mount|mkfs|ls|cat|write|mkdir|rm|df>: 文件系统);
+MSH_CMD_EXPORT(fs, fs <dev|part|mount|mkfs|ls|cd|pwd|cat|write|mkdir|rm|df>: 文件系统);
