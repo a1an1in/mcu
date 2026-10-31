@@ -12,6 +12,28 @@
 #include "diskio.h"
 #include "blkdev.h"
 
+#if FF_MULTI_PARTITION
+/* 卷 → (物理盘, 分区) 映射。ff.c 里 LD2PD/LD2PT 直接读这张表。
+ * 只有卷 0（对应 blkdev 0，即 sd0），pt 运行时可改（fs mount <n>）。 */
+PARTITION VolToPart[FF_VOLUMES] =
+{
+    { 0, 0 },       /* 物理盘 0，pt=0：自动找第一个 FAT 分区 */
+};
+
+void disk_set_partition(BYTE vol, BYTE pt)
+{
+    if ((vol < FF_VOLUMES) && (pt <= 4u))
+    {
+        VolToPart[vol].pt = pt;
+    }
+}
+
+BYTE disk_get_partition(BYTE vol)
+{
+    return (vol < FF_VOLUMES) ? VolToPart[vol].pt : 0u;
+}
+#endif /* FF_MULTI_PARTITION */
+
 static struct blkdev *disk_dev(BYTE pdrv)
 {
     return blkdev_get((int)pdrv);

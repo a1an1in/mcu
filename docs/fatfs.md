@@ -151,7 +151,7 @@ blkdev_register("flash0", &flash_ops, &s_flash, NULL);
 | `FF_USE_LFN` | 0 | 只支持 8.3 短名 |
 | `FF_FS_RPATH` | 0 | 一律绝对路径 `0:/...` |
 | `FF_VOLUMES` | 1 | drive 0 = 第 0 个块设备 |
-| `FF_MULTI_PARTITION` | 0 | 每个 drive 自动找**第一个 FAT 分区**；`f_mkfs` 会新建单分区 |
+| `FF_MULTI_PARTITION` | 1 | 允许指定分区：`VolToPart[0].pt` 运行时可改（0=自动找第一个 FAT 分区，1~4=强制） |
 | `FF_MIN_SS` / `FF_MAX_SS` | 512 / 512 | 固定 512，不要求 `GET_SECTOR_SIZE` |
 | `FF_LBA64` | 0 | 32 位 LBA 在 512B 扇区下可寻址 2TB |
 | `FF_FS_TINY` | 0 | 每个 `FIL` 自带 512B 缓冲，省掉「同卷并发踩缓冲」的坑 |
@@ -174,9 +174,10 @@ blkdev_register("flash0", &flash_ops, &s_flash, NULL);
 
 ```text
 fs list                 列出块设备（下标 / 名字 / 扇区数 / 容量 / 状态）
-fs mount                挂载 0:
+fs part                 打印 MBR 分区表（类型 / 起始 LBA / 大小）
+fs mount [pt]           挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）
 fs umount               卸载
-fs mkfs                 格式化 0:（⚠️ 会清掉卡上原有分区表和数据）
+fs mkfs [pt]            格式化（pt 省略=重写整盘分区表；pt=1~4 只格式化该分区）
 fs ls [path]            列目录（默认 /）
 fs cat <path>           打印文本文件（最多 4KB）
 fs write <path> <text…> 写文本文件（覆盖）
@@ -206,11 +207,22 @@ msh > fs cat /readme.txt
 
 1. **第一次 `fs mount` 才识别卡**。`fs list` 里显示「未初始化」是正常的，
    `fs mount` 会通过 `blkdev_init()` → `sd_init()` 走完整的 CMD0/CMD8/ACMD41。
-2. **挂载的是卡上的第一个 FAT 分区，不是整张卡**。现在这张 64GB SanDisk
-   上有一个 100MB 的 FAT32 分区，`fs mount` 后 `fs df` 会显示 ~100MB，
-   而不是 60GB —— 这是对的，文件系统只认分区。
-3. **`fs mkfs` 会重写分区表**（`FF_MULTI_PARTITION = 0` 时新建一个覆盖整卡
-   的单分区），原有分区和数据全丢。只在不心疼数据的卡上做。
+2. **默认挂载的是卡上的第一个 FAT 分区，不是整张卡**。自动搜索会跳过
+   exFAT / NTFS / ext4（FatFs 只认 FAT）。先 `fs part` 看分区表，再用
+   `fs mount <pt>` 指定分区：
+
+   ```text
+   msh > fs part
+   分区  类型        起始 LBA      扇区数        大小        文件系统
+   1     0x0b         63            204800        100          FAT32
+   2     0x0c         204863        124530625     60805        FAT32 LBA
+
+   msh > fs mount 2
+   已挂载 0:（分区 2）
+   ```
+
+3. **`fs mkfs` 默认重写整盘分区表**（`pt=0`），原有分区和数据全丢；
+   `fs mkfs 2` 只格式化第 2 分区，其它分区不受影响。只在不心疼数据的分区上做。
 
 ---
 
@@ -233,6 +245,8 @@ blkdev_register → blkdev_init → diskio → f_mkfs → f_mount
 - `disk_ioctl` 的 `GET_SECTOR_COUNT / GET_SECTOR_SIZE / GET_BLOCK_SIZE`；
 - 格式化后容量合理（`f_mkfs` 默认建分区，卷比整盘小 63 个扇区）；
 - 文件内容、大小、目录项、删除；
+- **分区选择**：强制 `pt=1` 挂到同一个卷、不存在的 `pt=3` 报
+  `FR_NO_FILESYSTEM`、恢复 `pt=0` 自动搜索；
 - 卸载再挂载内容仍在（证明写真的落到了介质，而不是只改了缓存）。
 
 运行：
@@ -259,7 +273,7 @@ docker run --rm -v "$PWD:/work" -w /work stm32f103-dev sh -c \
 
 | 项目 | 接入前 | 接入后 | 增量 |
 |---|---|---|---|
-| Flash | 148.9 KB | 161.9 KB | **+13.0 KB**（FatFs 本体 + 胶水 + msh 命令） |
+| Flash | 148.9 KB | 163.6 KB | **+14.7 KB**（FatFs 本体 + 胶水 + msh 命令） |
 | RAM | 24.4 KB | 30.0 KB | **+5.6 KB**（mkfs 4KB 工作缓冲 + cat 512B + FATFS/FIL） |
 
 RAM 增量主要来自 `fs_cmd.c` 里的静态缓冲：

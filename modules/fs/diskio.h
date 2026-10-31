@@ -60,6 +60,13 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count);
 DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count);
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff);
 
+#if FF_MULTI_PARTITION
+/* 选择卷对应的 MBR 分区：pt = 0 自动找第一个 FAT 分区，1~4 强制。
+ * 在 f_mount() 之前调用；已经挂载的卷需要先 f_mount(NULL, ...) 卸载。 */
+void disk_set_partition(BYTE vol, BYTE pt);
+BYTE disk_get_partition(BYTE vol);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

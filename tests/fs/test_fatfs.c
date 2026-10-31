@@ -316,6 +316,28 @@ static void test_format_and_write(void)
     }
 }
 
+static void test_partition_select(void)
+{
+    FILINFO fno;
+
+    /* f_mkfs 默认建了第 1 个分区；强制指定它，应该看到同一个卷 */
+    CHECK_EQ(f_mount(NULL, "0:", 0), FR_OK);
+    disk_set_partition(0, 1);
+    CHECK_EQ(disk_get_partition(0), 1);
+    CHECK_EQ(f_mount(&s_fs, "0:", 1), FR_OK);
+    CHECK_EQ(f_stat("0:/hello.txt", &fno), FR_OK);
+
+    /* 不存在的分区必须报 FR_NO_FILESYSTEM，不能悄悄挂到别的分区上 */
+    CHECK_EQ(f_mount(NULL, "0:", 0), FR_OK);
+    disk_set_partition(0, 3);
+    CHECK_EQ(f_mount(&s_fs, "0:", 1), FR_NO_FILESYSTEM);
+
+    /* 恢复自动搜索 */
+    CHECK_EQ(f_mount(NULL, "0:", 0), FR_OK);
+    disk_set_partition(0, 0);
+    CHECK_EQ(f_mount(&s_fs, "0:", 1), FR_OK);
+}
+
 static void test_remount_and_remove(void)
 {
     FIL fil;
@@ -366,6 +388,7 @@ int main(void)
     test_blkdev_io(dev);
     test_diskio();
     test_format_and_write();
+    test_partition_select();
     test_remount_and_remove();
     test_unformatted();
 

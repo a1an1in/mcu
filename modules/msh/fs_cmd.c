@@ -18,9 +18,11 @@
  * 也可以写完整的 "0:/dir/file.txt"。文件名按 8.3 短名（FF_USE_LFN = 0）。
  */
 #include <rtthread.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "blkdev.h"
+#include "diskio.h"
 #include "ff.h"
 
 #define FS_DRIVE            "0:"
@@ -34,6 +36,8 @@ static FATFS s_fs;
 static uint8_t s_work[FS_WORK_SIZE] __attribute__((aligned(4)));
 static char s_io[FS_IO_SIZE] __attribute__((aligned(4)));
 static uint8_t s_mounted;
+
+static void fs_do_umount(void);
 
 /* ============================ 小工具 ============================ */
 
@@ -99,9 +103,10 @@ static void fs_usage(void)
 {
     rt_kprintf("用法: fs <子命令> [参数]\n"
                "  fs list             列出块设备\n"
-               "  fs mount            挂载 0: 号卷\n"
+               "  fs part             打印 MBR 分区表\n"
+               "  fs mount [pt]       挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）\n"
                "  fs umount           卸载\n"
-               "  fs mkfs             格式化（会清掉卡上原有数据！）\n"
+               "  fs mkfs [pt]        格式化（pt 省略=重写整盘分区表！会清数据）\n"
                "  fs ls [path]        列目录，默认 /\n"
                "  fs cat <path>       打印文本文件\n"
                "  fs write <path> <text...>  写文本文件（覆盖）\n"
@@ -109,7 +114,141 @@ static void fs_usage(void)
                "  fs df               容量 / 剩余空间\n");
 }
 
-/* ============================ list / mount ============================ */
+/* 解析可选的 pt 参数：返回 0~4，或 -1（没给/非法） */
+static int fs_parse_pt(const char *arg)
+{
+    long v;
+    char *end = NULL;
+
+    if (arg == NULL)
+    {
+        return -1;
+    }
+
+    v = strtol(arg, &end, 10);
+    if ((end == arg) || (*end != '\0') || (v < 0) || (v > 4))
+    {
+        return -1;
+    }
+    return (int)v;
+}
+
+/* ============================ part ============================ */
+
+static uint32_t fs_le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* 打印 MBR 分区表。用途：确认卡上到底有几个分区、哪个是 FAT——
+ * 挂载只认 FAT/FAT32，exFAT / NTFS / ext4 这里能看出来但挂不上。 */
+static void fs_do_part(void)
+{
+    struct blkdev *dev = blkdev_get(0);
+    const uint8_t *mbr = (const uint8_t *)s_io;
+    int i;
+    int found = 0;
+
+    if (dev == NULL)
+    {
+        rt_kprintf("没有块设备 0（board 里没注册成功？）\n");
+        return;
+    }
+    if (blkdev_init(dev) != 0)
+    {
+        rt_kprintf("块设备初始化失败（卡识别没过？先用 sd info 看看）\n");
+        return;
+    }
+    if (blkdev_read(dev, 0, s_io, 1) != 0)
+    {
+        rt_kprintf("读 MBR 失败\n");
+        return;
+    }
+
+    if ((mbr[510] != 0x55u) || (mbr[511] != 0xAAu))
+    {
+        rt_kprintf("扇区 0 没有 MBR 签名：可能是整盘 FAT（super floppy），直接 fs mount 即可\n");
+        return;
+    }
+
+    rt_kprintf("分区  类型        起始 LBA      扇区数        大小        文件系统\n");
+    for (i = 0; i < 4; i++)
+    {
+        const uint8_t *pte = &mbr[446 + (i * 16)];
+        uint8_t type = pte[4];
+        uint32_t start = fs_le32(&pte[8]);
+        uint32_t count = fs_le32(&pte[12]);
+        uint32_t mb = count / 2048u;
+        const char *name;
+
+        if ((type == 0u) || (count == 0u))
+        {
+            continue;
+        }
+
+        switch (type)
+        {
+        case 0x01:  name = "FAT12"; break;
+        case 0x04:  name = "FAT16 <32M"; break;
+        case 0x06:  name = "FAT16"; break;
+        case 0x0B:  name = "FAT32"; break;
+        case 0x0C:  name = "FAT32 LBA"; break;
+        case 0x07:  name = "exFAT/NTFS"; break;
+        case 0x83:  name = "Linux"; break;
+        case 0xEE:  name = "GPT 保护分区"; break;
+        default:    name = "其他"; break;
+        }
+
+        rt_kprintf("%-4d  0x%02x        %-13lu %-13lu %-10lu %s\n",
+                   i + 1, type, (unsigned long)start,
+                   (unsigned long)count, (unsigned long)mb, name);
+        found++;
+    }
+
+    if (found == 0)
+    {
+        rt_kprintf("（没有有效分区项）\n");
+    }
+}
+
+/* ============================ mount / umount ============================ */
+
+static void fs_do_mount(const char *arg)
+{
+    int pt = fs_parse_pt(arg);
+    FRESULT fr;
+
+    if ((arg != NULL) && (pt < 0))
+    {
+        rt_kprintf("分区号必须是 0~4（0=自动）\n");
+        return;
+    }
+    if (pt < 0)
+    {
+        pt = (int)disk_get_partition(0);    /* 没给就沿用上次的选择 */
+    }
+
+    if (s_mounted != 0u)
+    {
+        fs_do_umount();
+    }
+
+    disk_set_partition(0, (BYTE)pt);
+
+    fr = f_mount(&s_fs, FS_DRIVE, 1);
+    if (fr == FR_OK)
+    {
+        s_mounted = 1u;
+        rt_kprintf("已挂载 %s（分区 %d%s）\n", FS_DRIVE, pt, (pt == 0) ? "，自动" : "");
+    }
+    else
+    {
+        s_mounted = 0u;
+        rt_kprintf("挂载失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
+        rt_kprintf("  用 fs part 看分区表：分区类型必须是 FAT，exFAT/NTFS 挂不上\n");
+    }
+}
 
 static void fs_do_list(void)
 {
@@ -134,22 +273,6 @@ static void fs_do_list(void)
     }
 }
 
-static void fs_do_mount(void)
-{
-    FRESULT fr = f_mount(&s_fs, FS_DRIVE, 1);
-
-    if (fr == FR_OK)
-    {
-        s_mounted = 1u;
-        rt_kprintf("已挂载 %s\n", FS_DRIVE);
-    }
-    else
-    {
-        s_mounted = 0u;
-        rt_kprintf("挂载失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
-    }
-}
-
 static void fs_do_umount(void)
 {
     if (s_mounted == 0u)
@@ -164,23 +287,44 @@ static void fs_do_umount(void)
 
 /* ============================ mkfs ============================ */
 
-static void fs_do_mkfs(void)
+static void fs_do_mkfs(const char *arg)
 {
     FRESULT fr;
+    int pt = fs_parse_pt(arg);
+
+    if ((arg != NULL) && (pt < 0))
+    {
+        rt_kprintf("分区号必须是 0~4（0=重写分区表）\n");
+        return;
+    }
+    if (pt < 0)
+    {
+        pt = 0;                             /* 默认：重写整盘分区表 */
+    }
 
     if (s_mounted != 0u)
     {
         fs_do_umount();
     }
 
-    rt_kprintf("正在格式化 %s（会清掉卡上原有分区表和数据）…\n", FS_DRIVE);
+    disk_set_partition(0, (BYTE)pt);
+
+    if (pt == 0)
+    {
+        rt_kprintf("正在格式化 %s（重写分区表，整盘数据都会丢）…\n", FS_DRIVE);
+    }
+    else
+    {
+        rt_kprintf("正在格式化 %s 的第 %d 分区（只动这个分区）…\n", FS_DRIVE, pt);
+    }
+
     fr = f_mkfs(FS_DRIVE, NULL, s_work, sizeof(s_work));
     if (fr != FR_OK)
     {
         rt_kprintf("格式化失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
         return;
     }
-    rt_kprintf("格式化完成，接着 fs mount\n");
+    rt_kprintf("格式化完成，接着 fs mount %s\n", (pt == 0) ? "" : arg);
 }
 
 /* ============================ ls ============================ */
@@ -426,16 +570,22 @@ static int fs(int argc, char **argv)
         return 0;
     }
 
+    if (strcmp(sub, "part") == 0)
+    {
+        fs_do_part();
+        return 0;
+    }
+
     if (strcmp(sub, "mkfs") == 0)
     {
-        fs_do_mkfs();
+        fs_do_mkfs((argc > 2) ? argv[2] : NULL);
         return 0;
     }
 
     /* 下面这些都要有已挂载的卷 */
     if (strcmp(sub, "mount") == 0)
     {
-        fs_do_mount();
+        fs_do_mount((argc > 2) ? argv[2] : NULL);
         return 0;
     }
     if (strcmp(sub, "umount") == 0)
@@ -481,4 +631,4 @@ static int fs(int argc, char **argv)
     }
     return 0;
 }
-MSH_CMD_EXPORT(fs, fs <list|mount|mkfs|ls|cat|write|rm|df>: 文件系统);
+MSH_CMD_EXPORT(fs, fs <list|part|mount|mkfs|ls|cat|write|rm|df>: 文件系统);

@@ -87,9 +87,12 @@
 #define FF_VOLUME_STRS		"sd"
 /* 0：路径写成 "0:/file" 这种数字盘符。 */
 
-#define FF_MULTI_PARTITION	0
-/* 0：每个逻辑卷直接对应同号物理盘上的第一个 FAT 分区（不查分区表映射）。
-/  本工程格式化整卡、不分多区，够用。 */
+#define FF_MULTI_PARTITION	1
+/* 1：允许指定挂载哪个分区（VolToPart[vol].pt，0=自动找第一个 FAT 分区，1~4=强制）。
+/  本工程卷 0 对应物理盘 0（sd0），pt 可以在运行时改：
+/      disk_set_partition(0, 2) → 下一次 f_mount("0:") 挂第 2 个分区
+/  msh 里就是 `fs part` 看分区表、`fs mount 2` 挂第 2 个分区。
+/  0 仍然自动搜索，和单分区时的行为一致。 */
 
 #define FF_MIN_SS		512
 #define FF_MAX_SS		512
