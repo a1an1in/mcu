@@ -131,12 +131,17 @@ class VoiceEngine:
     """PCM → ASR → LLM（带上下文）→ TTS(WAV)。模型只加载一次，串行处理。"""
 
     def __init__(self, bridge, asr_model, asr_language, tts_voice, tts_rate,
-                 voice_max_tokens, history_turns=6, idle_reset=600, max_chars=200):
+                 voice_max_tokens, history_turns=6, idle_reset=600, max_chars=200,
+                 tts_backend="edge", tts_edge_voice="zh-CN-XiaoxiaoNeural",
+                 tts_edge_rate="+5%"):
         self.bridge = bridge
         self.asr_model_name = asr_model
         self.asr_language = asr_language
         self.tts_voice = tts_voice
         self.tts_rate = tts_rate
+        self.tts_backend = tts_backend
+        self.tts_edge_voice = tts_edge_voice
+        self.tts_edge_rate = tts_edge_rate
         self.voice_max_tokens = voice_max_tokens
         self.history_turns = max(0, int(history_turns))
         self.idle_reset = max(0, int(idle_reset))
@@ -197,6 +202,25 @@ class VoiceEngine:
                 pass
 
     def synthesize(self, text):
+        """返回 (音频字节, MIME)。默认 edge-tts（自然），失败回退 SAPI（离线）。"""
+        if self.tts_backend == "edge":
+            fd, mp3 = tempfile.mkstemp(suffix=".mp3")
+            os.close(fd)
+            try:
+                import asyncio
+                import edge_tts
+                asyncio.run(edge_tts.Communicate(
+                    text, self.tts_edge_voice, rate=self.tts_edge_rate).save(mp3))
+                with open(mp3, "rb") as f:
+                    return f.read(), "audio/mpeg"
+            except Exception as e:  # noqa: BLE001 - 网络/包缺失都回退
+                print("[voice] edge-tts 失败，回退 SAPI: %s" % e)
+            finally:
+                try:
+                    os.unlink(mp3)
+                except OSError:
+                    pass
+
         fd, txt = tempfile.mkstemp(suffix=".txt")
         os.close(fd)
         fd, wav = tempfile.mkstemp(suffix=".wav")
@@ -214,7 +238,7 @@ class VoiceEngine:
             if r.returncode != 0:
                 raise RuntimeError("SAPI TTS 失败: %s" % (r.stderr or r.stdout).strip())
             with open(wav, "rb") as f:
-                return f.read()
+                return f.read(), "audio/wav"
         finally:
             for p in (txt, wav):
                 try:
@@ -241,12 +265,12 @@ class VoiceEngine:
             t2 = time.time()
             # 太长的回答朗读会很久，按配置截断
             speak = answer[:self.max_chars]
-            wav = self.synthesize(speak)
+            audio, mime = self.synthesize(speak)
             t3 = time.time()
             self._last_time = time.time()
             print("[voice] asr %.1fs llm %.1fs tts %.1fs | %r -> %r (history %d)"
                   % (t1 - t0, t2 - t1, t3 - t2, heard, answer, len(self._history) // 2))
-            return wav, heard, answer
+            return audio, mime, heard, answer
 
 
 def make_handler(bridge, voice):
@@ -323,9 +347,9 @@ def make_handler(bridge, voice):
 
             t0 = time.time()
             try:
-                wav, heard, answer = voice.handle(raw)
+                audio, mime, heard, answer = voice.handle(raw)
                 print("[voice] total %.1fs" % (time.time() - t0))
-                self._send(200, wav, ctype="audio/wav")
+                self._send(200, audio, ctype=mime)
                 return
             except Exception as e:  # noqa: BLE001
                 print("[voice] 失败: %s" % e)
@@ -333,7 +357,8 @@ def make_handler(bridge, voice):
             # 失败也要尽量“说出来”，说不出来就回文本
             msg = "出错了：%s" % e
             try:
-                self._send(200, voice.synthesize(msg[:120]), ctype="audio/wav")
+                data, mime = voice.synthesize(msg[:120])
+                self._send(200, data, ctype=mime)
             except Exception:  # noqa: BLE001
                 self._send(500, msg)
 
@@ -388,6 +413,12 @@ def main():
     ap.add_argument("--asr-language", default=os.environ.get("ASR_LANGUAGE") or cfg.get("asr_language", "zh"))
     ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
     ap.add_argument("--tts-rate", type=int, default=int(os.environ.get("TTS_RATE") or cfg.get("tts_rate", 2)))
+    ap.add_argument("--tts-backend", choices=["edge", "sapi"],
+                    default=os.environ.get("TTS_BACKEND") or cfg.get("tts_backend", "edge"))
+    ap.add_argument("--tts-edge-voice",
+                    default=os.environ.get("TTS_EDGE_VOICE") or cfg.get("tts_edge_voice", "zh-CN-XiaoxiaoNeural"))
+    ap.add_argument("--tts-edge-rate",
+                    default=os.environ.get("TTS_EDGE_RATE") or cfg.get("tts_edge_rate", "+5%"))
     ap.add_argument("--voice-max-tokens", type=int,
                     default=int(os.environ.get("VOICE_MAX_TOKENS") or cfg.get("voice_max_tokens", 500)))
     ap.add_argument("--voice-max-chars", type=int,
@@ -423,7 +454,8 @@ def main():
         voice = VoiceEngine(bridge, args.asr_model, args.asr_language,
                             args.tts_voice, args.tts_rate, args.voice_max_tokens,
                             args.voice_history_turns, args.voice_idle_reset,
-                            args.voice_max_chars)
+                            args.voice_max_chars, args.tts_backend,
+                            args.tts_edge_voice, args.tts_edge_rate)
         print("[voice] 预加载 ASR 模型 %s（首次会下载，请稍等）..." % args.asr_model)
         try:
             voice.preload()
@@ -444,8 +476,10 @@ def main():
     print("[bridge] listening on %s:%d" % (args.host, args.port))
     print("[bridge] model=%s  base=%s  max_tokens=%d" % (args.model, args.base_url, args.max_tokens))
     print("[bridge] API Key: %s..." % args.api_key[:6])
-    print("[bridge] voice=%s  asr=%s  tts=SAPI(%s)"
-          % ("on" if voice else "off", args.asr_model, args.tts_voice or "auto zh"))
+    tts_desc = ("edge(%s)" % args.tts_edge_voice) if args.tts_backend == "edge" \
+               else ("SAPI(%s)" % (args.tts_voice or "auto zh"))
+    print("[bridge] voice=%s  asr=%s  tts=%s"
+          % ("on" if voice else "off", args.asr_model, tts_desc))
     if voice:
         print("[voice] history=%d 轮  idle_reset=%ds  max_chars=%d  max_tokens=%d"
               % (args.voice_history_turns, args.voice_idle_reset,

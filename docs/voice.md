@@ -34,10 +34,10 @@ cd C:\Users\a1an1in\workspace\mcu
 python tools/llm_bridge.py
 ```
 
-首次需要装 ASR：
+首次需要装 ASR 和 TTS：
 
 ```powershell
-pip install faster-whisper
+pip install faster-whisper edge-tts
 ```
 
 模型默认 `base`（约 145MB）。国内访问 HuggingFace 会超时，脚本已默认：
@@ -47,8 +47,9 @@ HF_ENDPOINT=https://hf-mirror.com
 HF_HUB_DISABLE_XET=1
 ```
 
-TTS 用 Windows 自带 SAPI，中文语音（本机是 `Microsoft Huihui Desktop`），
-不需要装包。
+TTS 默认用 **edge-tts**（微软 Edge 的神经网络语音，很自然），中文默认
+`zh-CN-XiaoxiaoNeural`。它需要联网；网络失败会自动回退 Windows SAPI
+（`Microsoft Huihui Desktop`，离线但机械音）。
 
 可选环境变量 / `llm_bridge.local.json`：
 
@@ -56,19 +57,44 @@ TTS 用 Windows 自带 SAPI，中文语音（本机是 `Microsoft Huihui Desktop
 |---|---|---|
 | `ASR_MODEL` | `base` | `tiny` 更快但中文差；`small` 更准但慢 |
 | `ASR_LANGUAGE` | `zh` | 识别语言 |
-| `TTS_VOICE` | 自动选 zh-CN | 如 `Microsoft Huihui Desktop` |
-| `TTS_RATE` | `2` | SAPI 语速（-10~10） |
+| `TTS_BACKEND` | `edge` | `edge`（自然，需联网）或 `sapi`（离线） |
+| `TTS_EDGE_VOICE` | `zh-CN-XiaoxiaoNeural` | 见下方可选音色 |
+| `TTS_EDGE_RATE` | `+5%` | edge 语速，如 `+10%` / `-5%` |
+| `TTS_VOICE` | 自动选 zh-CN | **仅 SAPI** 用，如 `Microsoft Huihui Desktop` |
+| `TTS_RATE` | `2` | **仅 SAPI** 语速（-10~10） |
 | `VOICE_MAX_TOKENS` | `500` | 语音回答 token 上限（`deepseek-flash` 有推理 token，别太小） |
 | `VOICE_MAX_CHARS` | `200` | 朗读前截断字数 |
 | `VOICE_HISTORY_TURNS` | `6` | 记住最近几轮对话（0 = 不记） |
 | `VOICE_IDLE_RESET` | `600` | 空闲多少秒后自动清空历史 |
 | `--no-voice` | 关 | 只保留文本 `/ask`，不加载 ASR |
 
+### 可选中文音色（edge-tts）
+
+| 音色 | 风格 |
+|---|---|
+| `zh-CN-XiaoxiaoNeural` | 女声，自然通用（默认） |
+| `zh-CN-XiaoyiNeural` | 女声，偏年轻 |
+| `zh-CN-YunxiNeural` | 男声，偏年轻 |
+| `zh-CN-YunjianNeural` | 男声，偏沉稳 |
+| `zh-CN-YunyangNeural` | 男声，新闻播报感 |
+
+改法：在 `tools/llm_bridge.local.json` 里加
+
+```json
+"tts_backend": "edge",
+"tts_edge_voice": "zh-CN-YunxiNeural",
+"tts_edge_rate": "+5%"
+```
+
+或设环境变量 `TTS_EDGE_VOICE`，然后重启网关。
+完整列表：`edge-tts --list-voices | findstr zh-CN`。
+
 启动日志会打印：
 
 ```text
 [voice] ASR 就绪
-[bridge] voice=on  asr=base  tts=SAPI(auto zh)
+[bridge] voice=on  asr=base  tts=edge(zh-CN-XiaoxiaoNeural)
+[voice] history=6 轮  idle_reset=600s  max_chars=200  max_tokens=500
 [bridge] board command: ai server 10.10.10.115 8765
 ```
 
@@ -141,9 +167,11 @@ PC 端（本机，8k PCM，2.5 秒问题）：
 
 - 录音：8kHz / 16bit / 单声道，**裸 PCM** 上传（无 WAV 头）；
 - PC 用 `wave` 模块加 44 字节头后交给 faster-whisper；
-- 回答：SAPI 生成 22.05kHz / 16bit / 单声道 WAV，整段带回；
-- 板子把整个 WAV（含头）喂 VS1053，由芯片自己解析格式；
-- 超过 120 字的回答会被截断，避免朗读太久。
+- 回答：
+  - `TTS_BACKEND=edge`（默认）：24kHz/48kbps 单声道 **MP3**，自然音色；
+  - `TTS_BACKEND=sapi`（或 edge 失败回退）：22.05kHz/16bit 单声道 **WAV**；
+- 板子把整段音频（含 WAV 头或 MP3 帧）喂 VS1053，由芯片自己解析格式；
+- 超过 `VOICE_MAX_CHARS`（默认 200）字的回答会被截断，避免朗读太久。
 
 ## 7. 排查
 
@@ -151,8 +179,10 @@ PC 端（本机，8k PCM，2.5 秒问题）：
 |---|---|
 | 串口打印 `语音未启用（faster-whisper…）` | PC 没装 faster-whisper 或模型下载失败；看 bridge 日志 |
 | `连不上网关` | 板子没 `ai server` / IP 错 / 防火墙（Python 已在 Public 放行） |
-| 识别总是空 | MIC 增益低：`voice` 暂时固定 4 倍；可改 `VOICE_GAIN_REG` 到 8×1024 |
+| 识别总是空 | MIC 增益低：`voice gain 8`（0~15） |
 | 回答是“没听清” | 按键时间太短（<0.25s）或 MIC 没声音 |
+| 声音还是机械音 | edge-tts 没装上/联网失败，回退到了 SAPI；看 bridge 日志里的 `tts=` |
+| edge 报错 | 检查网络；`pip install edge-tts`；换 `TTS_EDGE_VOICE` |
 | 声音卡顿 | 网络太慢/丢包；回答 WAV 较大时 TCP 会背压，不影响正确性 |
 | 第一次特别慢 | 模型首次下载（base 约 145MB），之后缓存 |
 

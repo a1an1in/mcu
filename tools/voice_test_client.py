@@ -10,7 +10,6 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 TMP = tempfile.mkdtemp(prefix="voice_client_")
 TXT = os.path.join(TMP, "q.txt")
 WAV = os.path.join(TMP, "q.wav")
-OUT = os.path.join(TMP, "reply.wav")
 
 with open(TXT, "w", encoding="utf-8") as f:
     f.write("今天天气怎么样？")
@@ -49,22 +48,33 @@ s.close()
 dt = time.time() - t0
 resp = b"".join(chunks)
 head, _, body = resp.partition(b"\r\n\r\n")
-print("response %.1fs header:\n%s" % (dt, head.decode("utf-8", "replace")))
+head_text = head.decode("utf-8", "replace")
+print("response %.1fs header:\n%s" % (dt, head_text))
 print("body bytes=%d" % len(body))
-with open(OUT, "wb") as f:
+
+ctype = ""
+for line in head_text.splitlines():
+    if line.lower().startswith("content-type:"):
+        ctype = line.split(":", 1)[1].strip().lower()
+out_ext = ".mp3" if "mpeg" in ctype else ".wav"
+out = os.path.join(TMP, "reply" + out_ext)
+with open(out, "wb") as f:
     f.write(body)
 
-try:
-    with wave.open(OUT, "rb") as w:
-        print("reply wav %d Hz %d ch %.1fs" % (w.getframerate(), w.getnchannels(),
-                                               w.getnframes() / w.getframerate()))
-except Exception as e:
-    print("reply is not wav:", e, body[:80])
+if out_ext == ".wav":
+    try:
+        with wave.open(out, "rb") as w:
+            print("reply wav %d Hz %d ch %.1fs" % (w.getframerate(), w.getnchannels(),
+                                                   w.getnframes() / w.getframerate()))
+    except Exception as e:
+        print("reply is not wav:", e, body[:80])
+else:
+    print("reply %s %d bytes" % (ctype, len(body)))
 
 try:
     from faster_whisper import WhisperModel
     m = WhisperModel("base", device="cpu", compute_type="int8")
-    segs, _ = m.transcribe(OUT, language="zh", vad_filter=True)
+    segs, _ = m.transcribe(out, language="zh", vad_filter=True)
     print("reply text:", "".join(x.text for x in segs).strip())
 except Exception as e:
     print("reply transcribe skipped:", e)
