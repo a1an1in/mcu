@@ -14,6 +14,11 @@
 extern "C" {
 #endif
 
+/* 路径缓冲建议长度：盘符 + 8.3/长路径都够用 */
+#ifndef FS_PATH_MAX
+#define FS_PATH_MAX     128
+#endif
+
 /* 递归深度上限。msh 线程栈只有 4KB，一层递归约 120 字节，
  * 8 层留足余量；正常目录不会这么深（再深会返回 FR_INVALID_PARAMETER）。 */
 #define FS_REMOVE_MAX_DEPTH     8

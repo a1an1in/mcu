@@ -20,6 +20,8 @@ typedef enum {
     GPIO_PORT_C,
     GPIO_PORT_D,
     GPIO_PORT_E,
+    GPIO_PORT_F,
+    GPIO_PORT_G,
 } gpio_port_t;
 
 /* 引脚编码：高 8 位端口，低 8 位引脚号 */

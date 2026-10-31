@@ -66,6 +66,11 @@ drivers/
 │   ├── blkdev.h              块设备接口（与介质无关，512B 扇区 + 注册表）
 │   └── blkdev.c              静态注册表 / 惰性 init / 越界检查
 │
+├── audio/
+│   ├── vs1053.h              VS1053B 接口（SCI 寄存器 / SDI 数据 / 音量 / 切歌）
+│   ├── vs1053.c              芯片协议（OS 无关，走 drivers/spi）
+│   └── vs1053_config.h       板级事实（XCS/XDCS/DREQ/RST、SPI 速率）
+│
 ├── sd/
 │   ├── sd.h                  卡接口（sd_init / 块读写 / CID-CSD 解析）
 │   ├── sd.c                  卡协议（上电识别、容量、CMD17/18/24/25）
@@ -181,6 +186,7 @@ Zephyr 侧不走 `drivers/CMakeLists.txt`（它是独立构建宿主），在
 | `drivers/flash/` | ✅ `w25q128.h` + `w25q128.c` + `w25q128_config.h` | 板载 NM25Q128 / W25Q128（16MB，256B 页 / 4KB 扇区，SPI2 + PB12 片选，模式 3）：读、按 256 字节页切分写（跨页会回卷，已处理）、扇区擦除、整片擦除、JEDEC ID 校验，BUSY 用反复读状态寄存器轮询（不依赖 OS 延时）。`w25q128_write()` 要求区域已擦除（NOR 只能 1→0），`w25q128_write_erase()` 做读-改-写并支持跨扇区，4KB scratch 由调用方提供，驱动里不常驻大缓冲。无 SoC 层（总线已由 spi 组件抽象）、无 OS 层 |
 | `drivers/sd/` | ✅ `sd.h` + `sd.c` + `sdio.h` + `sd_config.h` + `sd_blkdev.{h,c}` + `stm32f1_sdio.{h,c}` | SD 卡走 **SDIO**（PC8~PC12 + PD2，不是 SPI）：CMD0 → CMD8 → ACMD41 识别，CMD2/3/9 取 CID/CSD 并算容量，CMD7 选中，ACMD6 切 4 位；块读写用 CMD17/18/24/25，写完用 CMD13 等卡内部编程结束。上板踩过的点：① ACMD41 的 R3 响应**没有 CRC7**，必须忽略 CCRCFAIL；② 写数据必须「先发命令 → 置 DTEN 并预填 FIFO」，提前 DTEN 会在命令前把数据打出去；③ FIFO 只有 128 字节，搬运全程要关中断，否则被 tcpip/etx 线程抢占导致 RXOVERR/TXUNDERR；④ **4 位对 CPU 速度很敏感**：4 位 24MHz = 12MB/s，搬运循环跟不上就溢出 —— 本工程靠 `-O2` + 72MHz 主频解决，慢速配置下把 `SD_BUS_WIDTH_4` 置 0 退回 1 位。实测：64GB SDHC，4 位 + 24MHz 读 MBR、末块写读比对均通过。`sd_blkdev.c` 把卡包成 `drivers/block` 的通用块设备（`sd0`），供文件系统使用；FatFs 分层见 `docs/fatfs.md`。**遗留优化**（CMD6 切高速模式 + DMA → 36MHz / 18MB/s）见 `docs/issues/sd-highspeed-dma-todo.md` |
 | `drivers/block/` | ✅ `blkdev.h` + `blkdev.c` | 与介质无关的 512B 块设备：`struct blkdev_ops`（init/read/write）+ 静态注册表（`BLKDEV_MAX = 4`，不分配内存、不加锁）。`blkdev_register()` 只登记、**不做 I/O**，识别介质推迟到 `blkdev_init()`（调度器起来之后），避免 board 初始化阶段碰 OS 对象。扇区固定 512，lba 是块地址；读写统一做未初始化与越界检查。文件系统侧只有 `modules/fs/diskio.c` 一个消费者，drive N ↔ 第 N 个块设备 |
+| `drivers/audio/` | ✅ `vs1053.h` + `vs1053.c` + `vs1053_config.h` | VS1053B 解码器（战舰 V4 板载，SPI1 与 CH395 共用）：SCI 寄存器读写、SDI 音频数据（32B/块 + DREQ）、软/硬复位、音量（0~100 映射到 0~250 档）、高低音、板载 HT6872 功放（VS1053 GPIO4）、SM_CANCEL 切歌、码率/解码时间、正弦测试。片选走 `struct spi_device.cs_pin`（XCS=PF7、XDCS=PF6），总线锁由 SPI 核心提供；`ch395_port.c` 已改为借同一把锁。播放线程与 FatFs 在 `modules/music`，详见 `docs/music-player.md` |
 
 ## 9. 新增一个驱动时的检查清单
 

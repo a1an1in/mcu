@@ -19,6 +19,7 @@
 #include <rtthread.h>
 
 #include "ch395.h"
+#include "spi.h"
 
 /* ============================ 寄存器定义 ============================ */
 #define RCC_BASE        0x40021000u
@@ -82,7 +83,7 @@
 /* 内核主频（MHz），只用于微秒忙等。board.c 用 HSI 8MHz。 */
 #define CH395_CPU_MHZ   8u
 
-static struct rt_mutex s_spi_lock;
+static struct spi_controller *s_spi1;   /* SPI1 的通用控制器：借它的总线锁 */
 
 /* ============================ 内部工具 ============================ */
 /* 配一个引脚的 CRL/CRH 四位域。mode_cnf 直接写 RM0008 的 MODE/CNF 组合值：
@@ -144,7 +145,13 @@ static uint32_t ch395_spi_br(void)
 
 void ch395_port_init(void)
 {
-    rt_mutex_init(&s_spi_lock, "ch395", RT_IPC_FLAG_PRIO);
+    /* SPI1 也被 VS1053 使用：互斥量统一用通用 SPI 层那一把（见 spi_core.c），
+     * 避免 CH395 的 rt_mutex 和 VS1053 的 spi_sync 各锁各的。 */
+    s_spi1 = spi_get_controller_by_name("stm32f1_spi1");
+    if (s_spi1 == NULL)
+    {
+        rt_kprintf("[ch395] 警告：SPI1 未注册，与 VS1053 的总线互斥失效\n");
+    }
 
     RCC_APB2ENR |= RCC_AFIOEN | RCC_IOPAEN | RCC_IOPDEN |
                    RCC_IOPEEN | RCC_IOPFEN | RCC_IOPGEN | RCC_SPI1EN;
@@ -189,14 +196,14 @@ void ch395_hw_reset(void)
 
 void ch395_cs_low(void)
 {
-    rt_mutex_take(&s_spi_lock, RT_WAITING_FOREVER);
+    (void)spi_bus_lock(s_spi1);
     GPIO_BSRR(GPIOG_BASE) = (1u << (CH395_CS_PIN + 16u));
 }
 
 void ch395_cs_high(void)
 {
     GPIO_BSRR(GPIOG_BASE) = (1u << CH395_CS_PIN);
-    rt_mutex_release(&s_spi_lock);
+    spi_bus_unlock(s_spi1);
 }
 
 uint8_t ch395_spi_rw(uint8_t d)

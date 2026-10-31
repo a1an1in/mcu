@@ -109,6 +109,25 @@ struct spi_controller *spi_get_controller(unsigned int nr)
     return s_ctlr[nr];
 }
 
+struct spi_controller *spi_get_controller_by_name(const char *name)
+{
+    int i;
+
+    if (name == NULL)
+    {
+        return NULL;
+    }
+
+    for (i = 0; i < SPI_MAX_CONTROLLERS; i++)
+    {
+        if ((s_ctlr[i] != NULL) && (strcmp(s_ctlr[i]->name, name) == 0))
+        {
+            return s_ctlr[i];
+        }
+    }
+    return NULL;
+}
+
 int spi_controller_nr(struct spi_controller *ctlr)
 {
     int i;

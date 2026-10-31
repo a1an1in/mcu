@@ -20,7 +20,7 @@ static rt_base_t to_rt_pin(gpio_pin_enc_t pin)
     uint32_t port = (pin >> 8) & 0xFFu;
     uint32_t p    = pin & 0xFFu;
 
-    if (port > 4u)
+    if (port > 6u)
         port = 0u;
 
     return (rt_base_t)(port * 16u + p);

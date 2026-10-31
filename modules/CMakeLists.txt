@@ -13,6 +13,7 @@ add_library(modules OBJECT
     fs/diskio.c
     fs/fs_util.c
     fs/fatfs/ff.c
+    music/music.c
 )
 
 # FatFs 是第三方源码（R0.14b），不参与本工程的 -Wall 洁癖。
@@ -33,6 +34,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/flash_cmd.c
         msh/sd_cmd.c
         msh/fs_cmd.c
+        msh/music_cmd.c
     )
 endif()
 
@@ -49,6 +51,8 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/storage
     ${CMAKE_SOURCE_DIR}/modules/fs
     ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
+    ${CMAKE_SOURCE_DIR}/modules/music
+    ${CMAKE_SOURCE_DIR}/drivers/audio
 )
 
 # 让模块编译期获得 rtt_kernel 的 include（本工程模块虽不直接 include RT-Thread，

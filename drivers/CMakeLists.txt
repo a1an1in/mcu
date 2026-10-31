@@ -11,9 +11,11 @@
 #   sd/    —— SD 卡组件：sd.h/sd.c(协议) + sdio.h + stm32f1_sdio.c(SDIO 寄存器)
 #            + sd_blkdev.c（SD → 通用块设备）
 #   block/ —— 块设备组件：blkdev.h/blkdev.c（512B 块设备接口 + 静态注册表）
+#   audio/ —— 音频组件：vs1053.h/vs1053.c + vs1053_config.h（VS1053B，SPI1）
 # =============================================================================
 
 add_subdirectory(block)
+add_subdirectory(audio)
 add_subdirectory(gpio)
 add_subdirectory(uart)
 add_subdirectory(net)

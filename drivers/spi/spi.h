@@ -203,6 +203,10 @@ int spi_add_controller(struct spi_controller *ctlr);
 /* 按编号取总线，未注册返回 NULL */
 struct spi_controller *spi_get_controller(unsigned int nr);
 
+/* 按名字取总线（板级给每条总线起唯一名字时用），找不到返回 NULL。
+ * STM32F1 的控制器名是 "stm32f1_spi1/2/3"，与 spi_hw 编号对应。 */
+struct spi_controller *spi_get_controller_by_name(const char *name);
+
 /* 取总线的注册编号，未注册返回负值 */
 int spi_controller_nr(struct spi_controller *ctlr);
 

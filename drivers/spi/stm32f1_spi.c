@@ -43,6 +43,13 @@ static const uint32_t s_gpio_base[7] =
     0x40012000u,    /* GPIOG */
 };
 
+/* 控制器名字：下标 = spi_hw。spi_get_controller_by_name() 用它来区分
+ * 同一颗 MCU 上的三路 SPI（CH395 在 SPI1、25Q128 在 SPI2）。 */
+static const char *const s_spi_name[4] =
+{
+    "", "stm32f1_spi1", "stm32f1_spi2", "stm32f1_spi3"
+};
+
 /* SPI1 在 APB2，SPI2 / SPI3 在 APB1 */
 static const uint32_t s_spi_base[4] =
 {
@@ -358,7 +365,7 @@ struct spi_controller *stm32f1_spi_init(unsigned int spi_hw, uint32_t pclk_hz,
     priv->pclk_hz = pclk_hz;
     priv->hw = (uint8_t)spi_hw;
 
-    s_ctlr[spi_hw].name = "stm32f1_spi";
+    s_ctlr[spi_hw].name = s_spi_name[spi_hw];
     s_ctlr[spi_hw].algo = &stm32f1_spi_algo;
     s_ctlr[spi_hw].algo_data = priv;
     s_ctlr[spi_hw].max_speed_hz = pclk_hz / 2u;

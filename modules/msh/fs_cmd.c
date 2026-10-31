@@ -29,9 +29,9 @@
 #include "diskio.h"
 #include "ff.h"
 #include "fs_util.h"
+#include "music.h"
 
 #define FS_DRIVE            "0:"
-#define FS_PATH_MAX         128
 #define FS_WORK_SIZE        4096        /* f_mkfs 的工作缓冲，4KB 足够 */
 #define FS_IO_SIZE          512         /* 单次读写块（也当递归删除的路径缓冲） */
 #define FS_CAT_CHUNK        128         /* cat 每次打印的字节数：受 RT_CONSOLEBUF_SIZE 限制 */
@@ -216,6 +216,12 @@ static void fs_do_mount(const char *arg)
         pt = (int)disk_get_partition(0);    /* 没给就沿用上次的选择 */
     }
 
+    if (music_is_playing() != 0)
+    {
+        rt_kprintf("正在播放音乐，先 music stop 再重新挂载\n");
+        return;
+    }
+
     if (s_mounted != 0u)
     {
         fs_do_umount();
@@ -267,6 +273,11 @@ static void fs_do_umount(void)
         rt_kprintf("本来就没挂载\n");
         return;
     }
+    if (music_is_playing() != 0)
+    {
+        rt_kprintf("正在播放音乐，先 music stop 再卸载\n");
+        return;
+    }
     (void)f_mount(NULL, FS_DRIVE, 0);
     s_mounted = 0u;
     rt_kprintf("已卸载 %s\n", FS_DRIVE);
@@ -287,6 +298,12 @@ static void fs_do_mkfs(const char *arg)
     if (pt < 0)
     {
         pt = 0;                             /* 默认：重写整盘分区表 */
+    }
+
+    if (music_is_playing() != 0)
+    {
+        rt_kprintf("正在播放音乐，先 music stop 再格式化\n");
+        return;
     }
 
     if (s_mounted != 0u)

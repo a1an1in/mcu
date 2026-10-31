@@ -26,6 +26,9 @@
 #include "spi.h"
 #include "spi_config.h"
 #include "stm32f1_spi.h"
+#include "gpio.h"
+#include "vs1053.h"
+#include "vs1053_config.h"
 #include "w25q128.h"
 #include "w25q128_config.h"
 #include "sd.h"
@@ -300,11 +303,25 @@ static void board_spi_init(void)
         SPI0_MISO_PORT_IDX, SPI0_MISO_PIN,
         SPI0_MOSI_PORT_IDX, SPI0_MOSI_PIN,
     };
+    /* SPI1：PA5/PA6/PA7，CH395Q 与 VS1053 共用。
+     * 名字由 stm32f1_spi.c 起成 "stm32f1_spi1"，ch395_port.c 按名字取它的锁。 */
+    static const struct stm32f1_spi_pins spi1_pins =
+    {
+        0u, 5u,     /* SCK  PA5 */
+        0u, 6u,     /* MISO PA6 */
+        0u, 7u,     /* MOSI PA7 */
+    };
     unsigned long pclk = (SPI0_HW == 1u) ? rcc_pclk2_hz() : rcc_pclk1_hz();
 
     if (stm32f1_spi_init(SPI0_HW, (uint32_t)pclk, (uint32_t)rcc_ahb_hz(), &pins) == NULL)
     {
         rt_kprintf("[spi] SPI%u 初始化失败，SPI 总线不可用\n", (unsigned int)SPI0_HW);
+    }
+
+    if (stm32f1_spi_init(1u, (uint32_t)rcc_pclk2_hz(),
+                         (uint32_t)rcc_ahb_hz(), &spi1_pins) == NULL)
+    {
+        rt_kprintf("[spi] SPI1 初始化失败，CH395 / VS1053 不可用\n");
     }
 }
 
@@ -335,6 +352,40 @@ static void board_flash_init(void)
     }
 
     w25q128_set_default(&s_flash);
+}
+
+/* ================= VS1053 音频（只绑定，不做 I/O） =================
+ * VS1053 与 CH395 共用 SPI1：
+ *   - 这里把 XCS/XDCS 拉高、RST 拉低（保持复位），避免它在上电阶段
+ *     驱动 MISO 和 CH395 抢总线；
+ *   - 真正的复位/软复位/音量设置推迟到第一次 music 命令（调度器起来后）。
+ */
+static struct vs1053 s_vs1053;
+
+static void board_audio_init(void)
+{
+    struct spi_controller *spi1 = spi_get_controller_by_name("stm32f1_spi1");
+
+    /* 先把输出锁存器设成期望电平，再切输出，避免切换瞬间的低电平毛刺 */
+    gpio_write(VS1053_XCS_PIN, 1);
+    gpio_write(VS1053_XDCS_PIN, 1);
+    gpio_output_init(VS1053_XCS_PIN);
+    gpio_output_init(VS1053_XDCS_PIN);
+    gpio_write(VS1053_RST_PIN, 0);
+    gpio_output_init(VS1053_RST_PIN);
+
+    if (spi1 == NULL)
+    {
+        rt_kprintf("[audio] SPI1 未注册，VS1053 不可用\n");
+        return;
+    }
+
+    if (vs1053_bind(&s_vs1053, spi1) != VS1053_OK)
+    {
+        rt_kprintf("[audio] VS1053 绑定失败\n");
+        return;
+    }
+    vs1053_set_default(&s_vs1053);
 }
 
 /* ================= SD 卡 =================
@@ -423,6 +474,9 @@ void rt_hw_board_init(void)
 
     /* 阶段 5：通用 SPI 总线（换板只改 spi_config.h） */
     board_spi_init();
+
+    /* 阶段 5.5：VS1053 绑定（只配引脚，不做 SPI 通信） */
+    board_audio_init();
 
     /* 阶段 6：板载 NOR FLASH —— 挂在 spi0 上，片选 PB12 */
     board_flash_init();

@@ -13,20 +13,24 @@
 #define RCC_BASE        0x40021000u
 #define RCC_APB2ENR     (*(volatile uint32_t *)(RCC_BASE + 0x18u))
 
-static const uint32_t s_gpio_base[5] = {
+static const uint32_t s_gpio_base[7] = {
     0x40010800u, /* A */
     0x40010C00u, /* B */
     0x40011000u, /* C */
     0x40011400u, /* D */
-    0x40011800u  /* E */
+    0x40011800u, /* E */
+    0x40011C00u, /* F */
+    0x40012000u  /* G */
 };
 /* APB2ENR 中对应端口的使能位 */
-static const uint32_t s_port_clk[5] = {
+static const uint32_t s_port_clk[7] = {
     2u, /* IOPAEN */
     3u, /* IOPBEN */
     4u, /* IOPCEN */
     5u, /* IOPDEN */
-    6u  /* IOPEN */
+    6u, /* IOPEEN */
+    7u, /* IOPFEN */
+    8u  /* IOPGEN */
 };
 
 #define GPIO_CRL(base)  (*(volatile uint32_t *)((base) + 0x00u)) /* 低 8 脚 */
@@ -39,7 +43,8 @@ void gpio_init(void)
     /* 全部 GPIO 端口时钟使能（板级资源较小，一次性开启） */
     RCC_APB2ENR |= ((1u << s_port_clk[0]) | (1u << s_port_clk[1]) |
                     (1u << s_port_clk[2]) | (1u << s_port_clk[3]) |
-                    (1u << s_port_clk[4]));
+                    (1u << s_port_clk[4]) | (1u << s_port_clk[5]) |
+                    (1u << s_port_clk[6]));
 }
 
 void gpio_output_init(gpio_pin_enc_t pin)
@@ -49,7 +54,7 @@ void gpio_output_init(gpio_pin_enc_t pin)
     volatile uint32_t *cfg;
     uint32_t bitoff, mask;
 
-    if (port > 4u)
+    if (port > 6u)
         return;
 
     RCC_APB2ENR |= (1u << s_port_clk[port]);
@@ -67,7 +72,7 @@ void gpio_write(gpio_pin_enc_t pin, int val)
     uint32_t port = (pin >> 8) & 0xFFu;
     uint32_t p    = pin & 0xFFu;
 
-    if (port > 4u)
+    if (port > 6u)
         return;
 
     if (val)
@@ -90,7 +95,7 @@ void gpio_input_init(gpio_pin_enc_t pin, gpio_pull_t pull)
     volatile uint32_t *cfg;
     uint32_t bitoff, mask, cnf;
 
-    if (port > 4u)
+    if (port > 6u)
         return;
 
     RCC_APB2ENR |= (1u << s_port_clk[port]);
@@ -112,7 +117,7 @@ int gpio_read(gpio_pin_enc_t pin)
     uint32_t port = (pin >> 8) & 0xFFu;
     uint32_t p    = pin & 0xFFu;
 
-    if (port > 4u)
+    if (port > 6u)
         return 0;
 
     return (GPIO_IDR(s_gpio_base[port]) & (1u << p)) ? 1 : 0;
