@@ -200,6 +200,10 @@ fs df                   总容量 / 剩余空间 / FAT 类型
 
 `fs pwd` 显示当前目录（单卷时输出 `/MUSIC` 这种形式，不带 `0:` 前缀）。
 
+> 提示：`rt_kprintf` 的单次输出受 `RT_CONSOLEBUF_SIZE` 限制（本板 512 字节），
+> 超长字符串会被直接截断，连多字节汉字都可能被切一半。所以 `fs` 的帮助是
+> **一行一次**打印的，`fs cat` 也按 128 字节分块输出。
+
 典型流程：
 
 ```text
@@ -290,8 +294,8 @@ docker run --rm -v "$PWD:/work" -w /work stm32f103-dev sh -c \
 
 | 项目 | 接入前 | 接入后 | 增量 |
 |---|---|---|---|
-| Flash | 148.9 KB | 165.8 KB | **+16.9 KB**（FatFs 本体 + 胶水 + msh 命令） |
-| RAM | 24.4 KB | 30.0 KB | **+5.6 KB**（mkfs 4KB 工作缓冲 + cat 512B + FATFS/FIL） |
+| Flash | 148.9 KB | 165.9 KB | **+17.0 KB**（FatFs 本体 + 胶水 + msh 命令） |
+| RAM | 24.4 KB | 30.5 KB | **+6.1 KB**（mkfs 4KB 工作缓冲 + cat 512B + 控制台缓冲 +256B） |
 
 RAM 增量主要来自 `fs_cmd.c` 里的静态缓冲：
 

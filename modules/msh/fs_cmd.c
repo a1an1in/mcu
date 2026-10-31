@@ -33,7 +33,8 @@
 #define FS_DRIVE            "0:"
 #define FS_PATH_MAX         128
 #define FS_WORK_SIZE        4096        /* f_mkfs 的工作缓冲，4KB 足够 */
-#define FS_IO_SIZE          512         /* 单次读写块 */
+#define FS_IO_SIZE          512         /* 单次读写块（也当递归删除的路径缓冲） */
+#define FS_CAT_CHUNK        128         /* cat 每次打印的字节数：受 RT_CONSOLEBUF_SIZE 限制 */
 #define FS_CAT_MAX          4096        /* cat 最多打这么多，防止刷屏 */
 #define FS_WRITE_MAX        511         /* 一次写入的文本上限 */
 
@@ -82,20 +83,22 @@ static int fs_path(const char *in, char *out)
 
 static void fs_usage(void)
 {
-    rt_kprintf("用法: fs <子命令> [参数]\n"
-               "  fs dev              列出块设备\n"
-               "  fs part             打印 MBR 分区表\n"
-               "  fs mount [pt]       挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）\n"
-               "  fs umount           卸载\n"
-               "  fs mkfs [pt]        格式化（pt 省略=重写整盘分区表！会清数据）\n"
-               "  fs ls [path]        列目录，默认当前目录\n"
-               "  fs cd [path]        切换目录，省略=根目录\n"
-               "  fs pwd              显示当前目录\n"
-               "  fs cat <path>       打印文本文件\n"
-               "  fs write <path> <text...>  写文本文件（覆盖）\n"
-               "  fs mkdir <path>     建目录\n"
-               "  fs rm [-r] <path>   删除文件/空目录；-r 递归删除\n"
-               "  fs df               容量 / 剩余空间\n");
+    /* 注意：rt_kprintf 单次输出受 RT_CONSOLEBUF_SIZE 限制（超出会截断），
+     * 所以这里**一行一次**打印，不要拼成一个几百字节的大字符串。 */
+    rt_kprintf("用法: fs <子命令> [参数]\n");
+    rt_kprintf("  fs dev              列出块设备\n");
+    rt_kprintf("  fs part             打印 MBR 分区表\n");
+    rt_kprintf("  fs mount [pt]       挂载 0:（pt=1~4 指定分区，省略=自动）\n");
+    rt_kprintf("  fs umount           卸载\n");
+    rt_kprintf("  fs mkfs [pt]        格式化（省略 pt=重写整盘分区表）\n");
+    rt_kprintf("  fs ls [path]        列目录，默认当前目录\n");
+    rt_kprintf("  fs cd [path]        切换目录，省略=根目录\n");
+    rt_kprintf("  fs pwd              显示当前目录\n");
+    rt_kprintf("  fs cat <path>       打印文本文件\n");
+    rt_kprintf("  fs write <path> <text...>  写文本文件（覆盖）\n");
+    rt_kprintf("  fs mkdir <path>     建目录\n");
+    rt_kprintf("  fs rm [-r] <path>   删除文件/空目录；-r 递归删除\n");
+    rt_kprintf("  fs df               容量 / 剩余空间\n");
 }
 
 /* 解析可选的 pt 参数：返回 0~4，或 -1（没给/非法） */
@@ -394,7 +397,7 @@ static void fs_do_cat(const char *path)
 
     for (;;)
     {
-        fr = f_read(&fil, s_io, FS_IO_SIZE - 1u, &got);
+        fr = f_read(&fil, s_io, FS_CAT_CHUNK, &got);
         if ((fr != FR_OK) || (got == 0u))
         {
             break;

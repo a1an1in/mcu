@@ -51,9 +51,12 @@
 #define RT_USING_SMALL_MEM
 #define RT_USING_SMALL_MEM_AS_HEAP
 
-/* ===== 控制台：rt_kprintf 依赖 RT_USING_CONSOLE ===== */
+/* ===== 控制台：rt_kprintf 依赖 RT_USING_CONSOLE =====
+ * RT_CONSOLEBUF_SIZE 是**单次** rt_kprintf 的输出上限（超出直接截断，
+ * 连一半的多字节汉字都会被切断）。命令帮助、文件内容打印很容易超，
+ * 所以放大到 512；长内容仍建议分次打印。 */
 #define RT_USING_CONSOLE
-#define RT_CONSOLEBUF_SIZE      256
+#define RT_CONSOLEBUF_SIZE      512
 
 /* ===== libc 策略：使用内核自带 klibc，不依赖外部 libc =====
  * 定义 RT_USING_NANO：让 rttypes.h 跳过 <sys/types.h>/<sys/errno.h>，
