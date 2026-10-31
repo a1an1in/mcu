@@ -576,6 +576,9 @@ int vs1053_record_start(struct vs1053 *dev, uint32_t sample_rate, uint16_t gain)
 
 int vs1053_record_stop(struct vs1053 *dev)
 {
+    uint8_t volume;
+    int ret;
+
     if (dev == NULL)
     {
         return VS1053_ERR_PARAM;
@@ -585,6 +588,8 @@ int vs1053_record_stop(struct vs1053 *dev)
         return VS1053_OK;
     }
 
+    volume = dev->volume;               /* 记住用户音量，init 会重置成默认 80 */
+
     /* 退出录音：写回普通模式并软复位；随后重新 init 恢复播放侧的时钟/音量 */
     (void)vs1053_write_reg(dev, VS1053_REG_MODE,
                            VS1053_SM_RESET | VS1053_SM_SDINEW);
@@ -593,7 +598,12 @@ int vs1053_record_stop(struct vs1053 *dev)
     dev->recording = 0u;
     dev->started = 0u;
     dev->ready = 0u;
-    return vs1053_init(dev);
+    ret = vs1053_init(dev);
+    if (ret == VS1053_OK)
+    {
+        (void)vs1053_set_volume(dev, volume);
+    }
+    return ret;
 }
 
 int vs1053_record_read(struct vs1053 *dev, void *buf, uint16_t len)

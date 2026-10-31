@@ -25,7 +25,7 @@
 
 #define VOICE_KEY           KEY_0
 #define VOICE_RATE          8000u
-#define VOICE_GAIN_REG      4096u       /* MIC 4 倍增益 */
+#define VOICE_GAIN_DEFAULT  4096u       /* MIC 默认 4 倍增益 */
 #define VOICE_BUF_SIZE      512u
 #define VOICE_MAX_SECONDS   30u
 #define VOICE_MAX_BYTES     (VOICE_RATE * 2u * VOICE_MAX_SECONDS)
@@ -37,6 +37,7 @@ static osal_thread_t s_thread;
 static volatile uint8_t s_enabled = 1u;
 static volatile uint8_t s_busy;
 static volatile uint8_t s_recording;
+static uint16_t s_gain_reg = VOICE_GAIN_DEFAULT;
 static uint8_t s_pcm[VOICE_BUF_SIZE] __attribute__((aligned(4)));
 
 /* ============================ HTTP 头 ============================ */
@@ -215,7 +216,7 @@ static void voice_cycle(void)
         return;
     }
 
-    if (vs1053_record_start(dev, VOICE_RATE, VOICE_GAIN_REG) != VS1053_OK)
+    if (vs1053_record_start(dev, VOICE_RATE, s_gain_reg) != VS1053_OK)
     {
         osal_printf("\n[voice] VS1053 进入录音失败\n");
         netconn_close(conn);
@@ -248,6 +249,9 @@ static void voice_cycle(void)
 
     /* 与 PC 处理并行：把 VS1053 从录音切回播放 */
     (void)vs1053_record_stop(dev);
+
+    /* 录音切回播放会把音量重置成默认 80；这里恢复 music/voice vol 的值 */
+    (void)vs1053_set_volume(dev, music_get_volume());
 
     osal_printf("\n[voice] 已发送 %u 字节，等待识别/回答...\n", (unsigned)sent);
 
@@ -325,4 +329,25 @@ int voice_is_busy(void)
 int voice_is_recording(void)
 {
     return (s_recording != 0u) ? 1 : 0;
+}
+
+void voice_set_gain(int gain)
+{
+    if (gain <= 0)
+    {
+        s_gain_reg = 0u;                /* 0 = 自动 AGC */
+    }
+    else if (gain > 15)
+    {
+        s_gain_reg = (uint16_t)(15u * 1024u);
+    }
+    else
+    {
+        s_gain_reg = (uint16_t)((unsigned)gain * 1024u);
+    }
+}
+
+int voice_get_gain(void)
+{
+    return (s_gain_reg == 0u) ? 0 : (int)(s_gain_reg / 1024u);
 }

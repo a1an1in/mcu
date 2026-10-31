@@ -25,6 +25,10 @@ int voice_key_enabled(void);
 int voice_is_busy(void);        /* 正在录音/上传/等待回答 */
 int voice_is_recording(void);   /* 正在采集 MIC */
 
+/* MIC 增益：0 = 自动 AGC；1~15 = 1024×gain（默认 4）。 */
+void voice_set_gain(int gain);
+int voice_get_gain(void);
+
 #ifdef __cplusplus
 }
 #endif

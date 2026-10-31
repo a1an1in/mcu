@@ -89,6 +89,8 @@ msh > voice info
 | 命令 | 说明 |
 |---|---|
 | `voice key [on\|off]` | 打开/关闭 KEY0 语音键（默认 on） |
+| `voice vol [0-100]` | 查询/设置播放音量（和 `music vol` 共用） |
+| `voice gain [0-15]` | 查询/设置 MIC 增益（0 = 自动 AGC，默认 4） |
 | `voice info` | 状态 + 网关 |
 
 - 录音上限 30 秒；
