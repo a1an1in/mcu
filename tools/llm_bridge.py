@@ -42,6 +42,23 @@ DEFAULT_SYSTEM = (
     "必要时给出 C 代码片段，不要长篇大论。"
 )
 
+# 可选：tools/llm_bridge.local.json（已在 .gitignore 里），用来“写死” Key，
+# 这样每次启动不用配环境变量。优先级：命令行 > 环境变量 > 本地文件 > 默认值。
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "llm_bridge.local.json")
+
+
+def load_local_config():
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:  # noqa: BLE001
+        print("[bridge] 读取 %s 失败: %s" % (CONFIG_PATH, e))
+        return {}
+
 
 class Bridge:
     def __init__(self, base_url, model, api_key, system, max_tokens, timeout):
@@ -163,19 +180,28 @@ def local_ips():
 
 
 def main():
+    cfg = load_local_config()
+
     ap = argparse.ArgumentParser(description="LAN HTTP -> LLM HTTPS bridge")
-    ap.add_argument("--host", default=os.environ.get("LLM_BRIDGE_HOST", "0.0.0.0"))
-    ap.add_argument("--port", type=int, default=int(os.environ.get("LLM_BRIDGE_PORT", "8765")))
-    ap.add_argument("--model", default=os.environ.get("LLM_MODEL", "deepseek-chat"))
-    ap.add_argument("--base-url", default=os.environ.get("LLM_BASE_URL", "https://api.deepseek.com"))
-    ap.add_argument("--api-key", default=os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY", ""))
-    ap.add_argument("--system", default=os.environ.get("LLM_SYSTEM", DEFAULT_SYSTEM))
-    ap.add_argument("--max-tokens", type=int, default=int(os.environ.get("LLM_MAX_TOKENS", "800")))
-    ap.add_argument("--timeout", type=int, default=int(os.environ.get("LLM_TIMEOUT", "60")))
+    ap.add_argument("--host", default=os.environ.get("LLM_BRIDGE_HOST") or cfg.get("host", "0.0.0.0"))
+    ap.add_argument("--port", type=int,
+                    default=int(os.environ.get("LLM_BRIDGE_PORT") or cfg.get("port", 8765)))
+    ap.add_argument("--model", default=os.environ.get("LLM_MODEL") or cfg.get("model", "deepseek-chat"))
+    ap.add_argument("--base-url",
+                    default=os.environ.get("LLM_BASE_URL") or cfg.get("base_url", "https://api.deepseek.com"))
+    ap.add_argument("--api-key",
+                    default=os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
+                    or cfg.get("api_key", ""))
+    ap.add_argument("--system", default=os.environ.get("LLM_SYSTEM") or cfg.get("system", DEFAULT_SYSTEM))
+    ap.add_argument("--max-tokens", type=int,
+                    default=int(os.environ.get("LLM_MAX_TOKENS") or cfg.get("max_tokens", 800)))
+    ap.add_argument("--timeout", type=int,
+                    default=int(os.environ.get("LLM_TIMEOUT") or cfg.get("timeout", 60)))
     args = ap.parse_args()
 
     if not args.api_key:
-        print("[bridge] 缺少 API Key：设置环境变量 DEEPSEEK_API_KEY，或传 --api-key")
+        print("[bridge] 缺少 API Key：设置环境变量 DEEPSEEK_API_KEY，或写 %s，或传 --api-key"
+              % CONFIG_PATH)
         return 2
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -193,6 +219,8 @@ def main():
         print("[bridge] 监听 %s:%d 失败: %s" % (args.host, args.port, e))
         return 1
 
+    if cfg:
+        print("[bridge] local config: %s" % CONFIG_PATH)
     print("[bridge] listening on %s:%d" % (args.host, args.port))
     print("[bridge] model=%s  base=%s  max_tokens=%d" % (args.model, args.base_url, args.max_tokens))
     print("[bridge] API Key: %s..." % args.api_key[:6])

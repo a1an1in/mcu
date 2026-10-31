@@ -21,6 +21,9 @@
 __pycache__/
 *.py[cod]
 
+# ---- 本地私密配置（API Key 等，绝不提交）----
+tools/llm_bridge.local.json
+
 # ---- OS specific ----
 .DS_Store
 Thumbs.db

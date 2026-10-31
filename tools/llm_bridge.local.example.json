@@ -1,0 +1,8 @@
+{
+  "api_key": "sk-在这里填你的key",
+  "model": "deepseek-flash",
+  "base_url": "https://api.deepseek.com",
+  "port": 8765,
+  "max_tokens": 800,
+  "timeout": 60
+}

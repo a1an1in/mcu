@@ -16,10 +16,37 @@
 
 ## 2. PC 端：启动网关
 
+### 方式 A：本地配置文件（推荐，写死一次）
+
+新建 `tools/llm_bridge.local.json`（已在 `.gitignore` 里，**不会提交**）：
+
+```json
+{
+  "api_key": "sk-你的key",
+  "model": "deepseek-flash",
+  "base_url": "https://api.deepseek.com",
+  "port": 8765,
+  "max_tokens": 800
+}
+```
+
+之后直接运行即可，不用再配环境变量：
+
 ```powershell
-# PowerShell
+python tools/llm_bridge.py
+```
+
+参考模板：`tools/llm_bridge.local.example.json`。
+
+> 优先级：命令行参数 > 环境变量 > 本地文件 > 默认值。
+> 如果之前用 `setx` 设过旧 Key，环境变量会盖住文件；删掉即可：
+> `[Environment]::SetEnvironmentVariable('DEEPSEEK_API_KEY',$null,'User')`
+
+### 方式 B：环境变量（适合 CI / 临时）
+
+```powershell
 $env:DEEPSEEK_API_KEY = "sk-你的key"
-$env:LLM_MODEL        = "deepseek-chat"     # 换成你的服务商支持的模型 ID
+$env:LLM_MODEL        = "deepseek-flash"
 python tools/llm_bridge.py
 ```
 
