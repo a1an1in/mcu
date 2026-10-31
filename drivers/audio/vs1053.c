@@ -27,7 +27,7 @@
 #define VS1053_GPIO_ODATA   0xC019u
 
 /* 默认音量 0~100 */
-#define VS1053_DEFAULT_VOL  60
+#define VS1053_DEFAULT_VOL  80
 
 static struct vs1053 *s_default;
 

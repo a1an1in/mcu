@@ -73,10 +73,10 @@ msh > music info
 文件: 0:/MUSIC/SONG01.MP3
 时间: 0:35
 码率: 128 kbps
-音量: 60
-
-msh > music vol 80
 音量: 80
+
+msh > music vol 40
+音量: 40
 
 msh > music stop
 已停止
@@ -116,7 +116,7 @@ FLAC / OGG 需要加载官方 patch（`patch_flac.h` / `patch_spec.h`），本�
 3. **切歌用 SM_CANCEL**：直接停数据会留残音/爆音。`vs1053_cancel()` 置
    SM_CANCEL 后喂 0，直到芯片清掉该位，再软复位。
 4. **音量映射**：用户 0~100 → VS1053 衰减档 0~250（寄存器值 `254-raw`，
-   双边）。默认 60。
+   双边）。默认 80。
 5. **板载功放**：HT6872 由 VS1053 的 GPIO4 控制，软件写内部 RAM
    （`0xC017` 方向、`0xC019` 电平），不占 MCU 引脚。
 6. **SPI 速率**：VS1053B 上限 9.216MHz。命令用 2MHz 档（实际 2.25MHz），

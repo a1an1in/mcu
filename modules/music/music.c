@@ -24,7 +24,7 @@
 static osal_thread_t s_thread;
 static volatile uint8_t s_playing;
 static volatile uint8_t s_stop;
-static volatile uint8_t s_volume = 60u;
+static volatile uint8_t s_volume = 80u;
 static char s_path[FS_PATH_MAX];
 static uint8_t s_buf[MUSIC_BUF_SIZE] __attribute__((aligned(4)));
 
