@@ -51,7 +51,8 @@ DEFAULT_SYSTEM = (
 )
 DEFAULT_VOICE_SYSTEM = (
     "你是嵌入式开发助手，正在和用户语音对话。"
-    "回答用中文、口语化，2~4 句话，尽量给出有用的信息，不超过 150 字；"
+    "用和用户相同的语言回答：用户说中文就用中文，用户说英文就用英文。"
+    "口语化，2~4 句话，尽量给出有用的信息，不超过 150 字；"
     "不要 Markdown、不要代码块、不要列表，适合直接朗读。"
 )
 
@@ -133,20 +134,27 @@ class VoiceEngine:
     def __init__(self, bridge, asr_model, asr_language, tts_voice, tts_rate,
                  voice_max_tokens, history_turns=6, idle_reset=600, max_chars=200,
                  tts_backend="edge", tts_edge_voice="zh-CN-XiaoxiaoNeural",
-                 tts_edge_rate="+5%"):
+                 tts_edge_voice_en="en-US-AriaNeural",
+                 tts_edge_rate="+5%", asr_vad=True, asr_beam_size=5,
+                 asr_model_en="", dump_dir=""):
         self.bridge = bridge
         self.asr_model_name = asr_model
+        self.asr_model_en = asr_model_en
+        self.dump_dir = dump_dir
         self.asr_language = asr_language
         self.tts_voice = tts_voice
         self.tts_rate = tts_rate
         self.tts_backend = tts_backend
         self.tts_edge_voice = tts_edge_voice
+        self.tts_edge_voice_en = tts_edge_voice_en
         self.tts_edge_rate = tts_edge_rate
+        self.asr_vad = bool(asr_vad)
+        self.asr_beam_size = max(1, int(asr_beam_size))
         self.voice_max_tokens = voice_max_tokens
         self.history_turns = max(0, int(history_turns))
         self.idle_reset = max(0, int(idle_reset))
         self.max_chars = max(40, int(max_chars))
-        self._model = None
+        self._models = {}
         self._model_lock = threading.Lock()
         self._run_lock = threading.Lock()
         self._history = []              # [{"role": "user"/"assistant", ...}]
@@ -174,16 +182,61 @@ class VoiceEngine:
             self._history = []
         return answer
 
-    def preload(self):
+    def _load(self, name):
         with self._model_lock:
-            if self._model is None:
+            model = self._models.get(name)
+            if model is None:
                 from faster_whisper import WhisperModel  # 延迟导入
-                self._model = WhisperModel(self.asr_model_name, device="cpu",
-                                           compute_type="int8")
-        return self._model
+                print("[voice] 加载 ASR 模型 %s ..." % name)
+                model = WhisperModel(name, device="cpu", compute_type="int8")
+                self._models[name] = model
+            return model
+
+    def preload(self):
+        model = self._load(self.asr_model_name)
+        if self.asr_model_en and self.asr_model_en != self.asr_model_name:
+            self._load(self.asr_model_en)      # 英文用专用模型，首次启动就下好
+        return model
+
+    def _dump(self, pcm, rms, peak):
+        """把上传的 PCM 存成 WAV，方便事后对比识别效果（VOICE_DUMP=目录）。"""
+        try:
+            os.makedirs(self.dump_dir, exist_ok=True)
+            name = time.strftime("voice-%Y%m%d-%H%M%S") + \
+                "-rms%d-peak%d.wav" % (rms, peak)
+            path = os.path.join(self.dump_dir, name)
+            with wave.open(path, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(VOICE_RATE)
+                w.writeframes(pcm)
+            keep = sorted(f for f in os.listdir(self.dump_dir)
+                          if f.startswith("voice-") and f.endswith(".wav"))
+            for old in keep[:-20]:
+                try:
+                    os.unlink(os.path.join(self.dump_dir, old))
+                except OSError:
+                    pass
+        except Exception as e:  # noqa: BLE001
+            print("[voice] 保存 PCM 失败: %s" % e)
 
     def transcribe(self, pcm):
-        model = self.preload()
+        """返回 (识别文本, 语言)。asr_language=auto 时由 Whisper 自动判断。"""
+        if pcm:
+            try:
+                import audioop
+                rms = audioop.rms(pcm, 2)
+                peak = audioop.max(pcm, 2)
+                print("[voice] pcm %d bytes (%.2fs) rms=%d peak=%d%s"
+                      % (len(pcm), len(pcm) / 16000.0, rms, peak,
+                         "  << 可能削波，调小 MIC 增益" if peak >= 30000 else ""))
+                if self.dump_dir:
+                    self._dump(pcm, rms, peak)
+            except Exception:
+                print("[voice] pcm %d bytes" % len(pcm))
+
+        auto = (self.asr_language or "").lower() in ("", "auto", "detect")
+        model = self._models.get(self.asr_model_name) or self.preload()
         fd, path = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
         try:
@@ -192,25 +245,51 @@ class VoiceEngine:
                 w.setsampwidth(2)
                 w.setframerate(VOICE_RATE)
                 w.writeframes(pcm)
-            segments, _info = model.transcribe(path, language=self.asr_language,
-                                               vad_filter=True, beam_size=1)
-            return "".join(s.text for s in segments).strip()
+            segments, info = model.transcribe(
+                path,
+                language=None if auto else self.asr_language,
+                vad_filter=self.asr_vad,
+                beam_size=self.asr_beam_size,
+                condition_on_previous_text=False)
+            text = "".join(s.text for s in segments).strip()
+            lang = (getattr(info, "language", None) or
+                    ("zh" if not auto else "unknown"))
+            if auto:
+                print("[voice] lang=%s p=%.2f" %
+                      (lang, getattr(info, "language_probability", 0.0)))
+
+            # 英文换专用模型再识别一遍（small.en 比 base 准很多）
+            if (str(lang).lower().startswith("en") and self.asr_model_en
+                    and self.asr_model_en != self.asr_model_name):
+                m2 = self._load(self.asr_model_en)
+                seg2, _ = m2.transcribe(
+                    path,
+                    language=None if self.asr_model_en.endswith(".en") else "en",
+                    vad_filter=self.asr_vad,
+                    beam_size=self.asr_beam_size,
+                    condition_on_previous_text=False)
+                text2 = "".join(s.text for s in seg2).strip()
+                if text2:
+                    text = text2
+            return text, lang
         finally:
             try:
                 os.unlink(path)
             except OSError:
                 pass
 
-    def synthesize(self, text):
+    def synthesize(self, text, lang="zh"):
         """返回 (音频字节, MIME)。默认 edge-tts（自然），失败回退 SAPI（离线）。"""
+        is_en = str(lang).lower().startswith("en")
         if self.tts_backend == "edge":
+            voice = self.tts_edge_voice_en if is_en else self.tts_edge_voice
             fd, mp3 = tempfile.mkstemp(suffix=".mp3")
             os.close(fd)
             try:
                 import asyncio
                 import edge_tts
                 asyncio.run(edge_tts.Communicate(
-                    text, self.tts_edge_voice, rate=self.tts_edge_rate).save(mp3))
+                    text, voice, rate=self.tts_edge_rate).save(mp3))
                 with open(mp3, "rb") as f:
                     return f.read(), "audio/mpeg"
             except Exception as e:  # noqa: BLE001 - 网络/包缺失都回退
@@ -231,8 +310,9 @@ class VoiceEngine:
             cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                    "-File", TTS_SCRIPT, "-TextFile", txt, "-OutFile", wav,
                    "-Rate", str(self.tts_rate)]
-            if self.tts_voice:
-                cmd += ["-Voice", self.tts_voice]
+            sapi_voice = self.tts_voice or ("Microsoft Zira Desktop" if is_en else "")
+            if sapi_voice:
+                cmd += ["-Voice", sapi_voice]
             r = subprocess.run(cmd, capture_output=True, text=True,
                                encoding="utf-8", errors="replace", timeout=30)
             if r.returncode != 0:
@@ -254,7 +334,7 @@ class VoiceEngine:
                 print("[voice] 空闲超时，自动清空对话历史")
 
             t0 = time.time()
-            heard = self.transcribe(pcm)
+            heard, lang = self.transcribe(pcm)
             t1 = time.time()
             if heard:
                 answer = self.ask_with_history(heard)
@@ -262,14 +342,16 @@ class VoiceEngine:
                     answer = "这个我暂时答不上来，你换个问法试试？"
             else:
                 answer = "我没听清，请再说一遍。"
+                print("[voice] 识别为空：如果麦克风有电平，试 ASR_VAD=0")
             t2 = time.time()
             # 太长的回答朗读会很久，按配置截断
             speak = answer[:self.max_chars]
-            audio, mime = self.synthesize(speak)
+            audio, mime = self.synthesize(speak, lang)
             t3 = time.time()
             self._last_time = time.time()
-            print("[voice] asr %.1fs llm %.1fs tts %.1fs | %r -> %r (history %d)"
-                  % (t1 - t0, t2 - t1, t3 - t2, heard, answer, len(self._history) // 2))
+            print("[voice] asr %.1fs llm %.1fs tts %.1fs | [%s] %r -> %r (history %d)"
+                  % (t1 - t0, t2 - t1, t3 - t2, lang, heard, answer,
+                     len(self._history) // 2))
             return audio, mime, heard, answer
 
 
@@ -410,13 +492,21 @@ def main():
     ap.add_argument("--timeout", type=int,
                     default=int(os.environ.get("LLM_TIMEOUT") or cfg.get("timeout", 60)))
     ap.add_argument("--asr-model", default=os.environ.get("ASR_MODEL") or cfg.get("asr_model", "base"))
-    ap.add_argument("--asr-language", default=os.environ.get("ASR_LANGUAGE") or cfg.get("asr_language", "zh"))
+    ap.add_argument("--asr-model-en",
+                    default=os.environ.get("ASR_MODEL_EN") or cfg.get("asr_model_en", "small.en"))
+    ap.add_argument("--asr-language", default=os.environ.get("ASR_LANGUAGE") or cfg.get("asr_language", "auto"))
+    ap.add_argument("--asr-vad", type=int,
+                    default=int(os.environ.get("ASR_VAD") or cfg.get("asr_vad", 1)))
+    ap.add_argument("--asr-beam-size", type=int,
+                    default=int(os.environ.get("ASR_BEAM_SIZE") or cfg.get("asr_beam_size", 5)))
     ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
     ap.add_argument("--tts-rate", type=int, default=int(os.environ.get("TTS_RATE") or cfg.get("tts_rate", 2)))
     ap.add_argument("--tts-backend", choices=["edge", "sapi"],
                     default=os.environ.get("TTS_BACKEND") or cfg.get("tts_backend", "edge"))
     ap.add_argument("--tts-edge-voice",
                     default=os.environ.get("TTS_EDGE_VOICE") or cfg.get("tts_edge_voice", "zh-CN-XiaoxiaoNeural"))
+    ap.add_argument("--tts-edge-voice-en",
+                    default=os.environ.get("TTS_EDGE_VOICE_EN") or cfg.get("tts_edge_voice_en", "en-US-AriaNeural"))
     ap.add_argument("--tts-edge-rate",
                     default=os.environ.get("TTS_EDGE_RATE") or cfg.get("tts_edge_rate", "+5%"))
     ap.add_argument("--voice-max-tokens", type=int,
@@ -428,6 +518,8 @@ def main():
     ap.add_argument("--voice-idle-reset", type=int,
                     default=int(os.environ.get("VOICE_IDLE_RESET") or cfg.get("voice_idle_reset", 600)))
     ap.add_argument("--no-voice", action="store_true")
+    ap.add_argument("--dump-voice", metavar="DIR",
+                    default=os.environ.get("VOICE_DUMP") or cfg.get("dump_voice", ""))
     args = ap.parse_args()
 
     if not args.api_key:
@@ -455,7 +547,11 @@ def main():
                             args.tts_voice, args.tts_rate, args.voice_max_tokens,
                             args.voice_history_turns, args.voice_idle_reset,
                             args.voice_max_chars, args.tts_backend,
-                            args.tts_edge_voice, args.tts_edge_rate)
+                            args.tts_edge_voice, args.tts_edge_voice_en,
+                            args.tts_edge_rate,
+                            args.asr_vad != 0, args.asr_beam_size,
+                            asr_model_en=args.asr_model_en,
+                            dump_dir=args.dump_voice)
         print("[voice] 预加载 ASR 模型 %s（首次会下载，请稍等）..." % args.asr_model)
         try:
             voice.preload()
@@ -476,14 +572,21 @@ def main():
     print("[bridge] listening on %s:%d" % (args.host, args.port))
     print("[bridge] model=%s  base=%s  max_tokens=%d" % (args.model, args.base_url, args.max_tokens))
     print("[bridge] API Key: %s..." % args.api_key[:6])
-    tts_desc = ("edge(%s)" % args.tts_edge_voice) if args.tts_backend == "edge" \
+    tts_desc = ("edge(%s / %s)" % (args.tts_edge_voice, args.tts_edge_voice_en)) \
+               if args.tts_backend == "edge" \
                else ("SAPI(%s)" % (args.tts_voice or "auto zh"))
-    print("[bridge] voice=%s  asr=%s  tts=%s"
-          % ("on" if voice else "off", args.asr_model, tts_desc))
+    print("[bridge] voice=%s  asr=%s%s  lang=%s  tts=%s"
+          % ("on" if voice else "off", args.asr_model,
+             ("/en:" + args.asr_model_en)
+             if (args.asr_model_en and args.asr_model_en != args.asr_model) else "",
+             args.asr_language, tts_desc))
     if voice:
-        print("[voice] history=%d 轮  idle_reset=%ds  max_chars=%d  max_tokens=%d"
+        print("[voice] history=%d 轮  idle_reset=%ds  max_chars=%d  max_tokens=%d  vad=%s  beam=%d"
               % (args.voice_history_turns, args.voice_idle_reset,
-                 args.voice_max_chars, args.voice_max_tokens))
+                 args.voice_max_chars, args.voice_max_tokens,
+                 "on" if args.asr_vad else "off", args.asr_beam_size))
+        if args.dump_voice:
+            print("[voice] PCM 存档: %s（只保留最近 20 个）" % args.dump_voice)
     for ip in local_ips():
         print("[bridge] board command: chat server %s %d" % (ip, args.port))
     print("[bridge] Ctrl+C 停止")

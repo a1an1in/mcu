@@ -1,5 +1,5 @@
 /*
- * voice.c - 流式语音对话（VS1053 录音 → TCP → ASR/LLM/TTS → VS1053 播放）
+ * chat_voice.c - 流式语音对话（VS1053 录音 → TCP → ASR/LLM/TTS → VS1053 播放）
  *
  * 设计目标是把「录完再传」的 5~10 秒延迟压到 2~4 秒：
  *   - 录音时同步 512B 发送，不写 SD；
@@ -16,12 +16,11 @@
 #include "lwip/api.h"
 #include "lwip/ip_addr.h"
 
-#include "ai.h"
+#include "chat.h"
 #include "key.h"
 #include "music.h"
 #include "recorder.h"
 #include "vs1053.h"
-#include "voice.h"
 
 #define VOICE_KEY           KEY_0
 #define VOICE_RATE          8000u
@@ -176,7 +175,7 @@ static void voice_cycle(void)
         osal_printf("\n[voice] 正在 record，先 record stop\n");
         return;
     }
-    if (ai_get_server(ip, sizeof(ip), &port) != AI_OK)
+    if (chat_server_get(ip, sizeof(ip), &port) != CHAT_OK)
     {
         osal_printf("\n[voice] 先 chat server <PC_IP> [port]\n");
         return;
@@ -293,7 +292,7 @@ static void voice_thread(void *param)
     }
 }
 
-int voice_service_start(void)
+int chat_voice_service_start(void)
 {
     if (s_thread != OSAL_NULL)
     {
@@ -311,27 +310,27 @@ int voice_service_start(void)
     return 0;
 }
 
-void voice_key_enable(int on)
+void chat_voice_key_enable(int on)
 {
     s_enabled = (on != 0) ? 1u : 0u;
 }
 
-int voice_key_enabled(void)
+int chat_chat_voice_key_enabled(void)
 {
     return (s_enabled != 0u) ? 1 : 0;
 }
 
-int voice_is_busy(void)
+int chat_voice_is_busy(void)
 {
     return (s_busy != 0u) ? 1 : 0;
 }
 
-int voice_is_recording(void)
+int chat_voice_is_recording(void)
 {
     return (s_recording != 0u) ? 1 : 0;
 }
 
-void voice_set_gain(int gain)
+void chat_voice_set_gain(int gain)
 {
     if (gain <= 0)
     {
@@ -347,7 +346,7 @@ void voice_set_gain(int gain)
     }
 }
 
-int voice_get_gain(void)
+int chat_voice_get_gain(void)
 {
     return (s_gain_reg == 0u) ? 0 : (int)(s_gain_reg / 1024u);
 }

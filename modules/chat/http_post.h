@@ -1,5 +1,5 @@
 /*
- * http_post.h - 极简 HTTP/1.1 POST 请求构造 <modules/ai/>
+ * http_post.h - 极简 HTTP/1.1 POST 请求构造 <modules/chat/>
  *
  * 只拼「POST + Host + Content-Length + 明文 body」，不碰 socket。
  * 单独成文件是为了能在宿主机上单测字节格式。

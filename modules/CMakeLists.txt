@@ -16,9 +16,9 @@ add_library(modules OBJECT
     music/music.c
     recorder/recorder.c
     recorder/wav.c
-    ai/ai.c
-    ai/http_post.c
-    voice/voice.c
+    chat/chat_text.c
+    chat/chat_voice.c
+    chat/http_post.c
 )
 
 # FatFs 是第三方源码（R0.14b），不参与本工程的 -Wall 洁癖。
@@ -61,8 +61,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
     ${CMAKE_SOURCE_DIR}/modules/music
     ${CMAKE_SOURCE_DIR}/modules/recorder
-    ${CMAKE_SOURCE_DIR}/modules/ai
-    ${CMAKE_SOURCE_DIR}/modules/voice
+    ${CMAKE_SOURCE_DIR}/modules/chat
     ${CMAKE_SOURCE_DIR}/modules/key
     ${CMAKE_SOURCE_DIR}/drivers/audio
 )

@@ -1,5 +1,5 @@
 /*
- * ai.c - 局域网大模型网关客户端 <modules/ai/>
+ * chat_text.c - 局域网大模型网关客户端 <modules/chat/>
  *
  * 协议极简：
  *   POST /ask  Content-Type: text/plain   body = 问题（UTF-8）
@@ -15,45 +15,45 @@
 #include "lwip/api.h"
 #include "lwip/ip_addr.h"
 
-#include "ai.h"
+#include "chat.h"
 #include "http_post.h"
 
-#define AI_REQ_MAX          1024u
-#define AI_CHUNK            128u    /* 单次 osal_printf 的字节数（控制台缓冲 512） */
-#define AI_MAX_RESP         4096u   /* 最多打印这么多，避免刷屏 */
-#define AI_RECV_TIMEOUT_MS  20000u
+#define CHAT_REQ_MAX          1024u
+#define CHAT_CHUNK            128u    /* 单次 osal_printf 的字节数（控制台缓冲 512） */
+#define CHAT_MAX_RESP         4096u   /* 最多打印这么多，避免刷屏 */
+#define CHAT_RECV_TIMEOUT_MS  20000u
 
 static ip_addr_t s_server;
 static uint16_t s_port = 8765u;
 static uint8_t s_configured;
 
-static char s_req[AI_REQ_MAX];
+static char s_req[CHAT_REQ_MAX];
 static char s_host[32];
-static char s_out[AI_CHUNK + 4u];
+static char s_out[CHAT_CHUNK + 4u];
 static size_t s_out_len;
 
 /* ============================ 配置 ============================ */
 
-int ai_set_server(const char *ip, uint16_t port)
+int chat_server_set(const char *ip, uint16_t port)
 {
     if ((ip == NULL) || (port == 0u))
     {
-        return AI_ERR_PARAM;
+        return CHAT_ERR_PARAM;
     }
     if (ip4addr_aton(ip, &s_server) == 0)
     {
-        return AI_ERR_PARAM;
+        return CHAT_ERR_PARAM;
     }
     s_port = port;
     s_configured = 1u;
-    return AI_OK;
+    return CHAT_OK;
 }
 
-int ai_get_server(char *ip_buf, unsigned int ip_size, uint16_t *port)
+int chat_server_get(char *ip_buf, unsigned int ip_size, uint16_t *port)
 {
     if ((ip_buf == NULL) || (ip_size < 8u))
     {
-        return AI_ERR_PARAM;
+        return CHAT_ERR_PARAM;
     }
     if (s_configured == 0u)
     {
@@ -61,13 +61,13 @@ int ai_get_server(char *ip_buf, unsigned int ip_size, uint16_t *port)
     }
     if (ip4addr_ntoa_r(&s_server, ip_buf, (int)ip_size) == NULL)
     {
-        return AI_ERR_PARAM;
+        return CHAT_ERR_PARAM;
     }
     if (port != NULL)
     {
         *port = s_port;
     }
-    return AI_OK;
+    return CHAT_OK;
 }
 
 /* ============================ 输出 ============================ */
@@ -101,7 +101,7 @@ static size_t utf8_cut(const char *s, size_t len)
     return i;
 }
 
-static void ai_flush_out(void)
+static void chat_flush_out(void)
 {
     size_t cut;
 
@@ -130,18 +130,18 @@ static void ai_flush_out(void)
     }
 }
 
-static void ai_body_byte(char c)
+static void chat_body_byte(char c)
 {
     s_out[s_out_len++] = c;
-    if (s_out_len >= AI_CHUNK)
+    if (s_out_len >= CHAT_CHUNK)
     {
-        ai_flush_out();
+        chat_flush_out();
     }
 }
 
 /* ============================ 提问 ============================ */
 
-int ai_ask(const char *text)
+int chat_text_ask(const char *text)
 {
     struct netconn *conn;
     struct netbuf *nb;
@@ -157,24 +157,24 @@ int ai_ask(const char *text)
 
     if ((text == NULL) || (text[0] == '\0'))
     {
-        return AI_ERR_PARAM;
+        return CHAT_ERR_PARAM;
     }
     if (s_configured == 0u)
     {
-        return AI_ERR_NOSERVER;
+        return CHAT_ERR_NOSERVER;
     }
 
     /* Host 头：ip[:port] */
     if (ip4addr_ntoa_r(&s_server, s_host, (int)sizeof(s_host)) == NULL)
     {
-        return AI_ERR_PARAM;
+        return CHAT_ERR_PARAM;
     }
     n = strlen(s_host);
     if (s_port != 80u)
     {
         if ((n + 7u) >= sizeof(s_host))
         {
-            return AI_ERR_TOOBIG;
+            return CHAT_ERR_TOOBIG;
         }
         s_host[n++] = ':';
         if (s_port >= 10000u) s_host[n++] = (char)('0' + (s_port / 10000u) % 10u);
@@ -188,22 +188,22 @@ int ai_ask(const char *text)
     req_len = http_post_plain(s_req, sizeof(s_req), s_host, "/ask", text);
     if (req_len < 0)
     {
-        return AI_ERR_TOOBIG;
+        return CHAT_ERR_TOOBIG;
     }
 
     conn = netconn_new(NETCONN_TCP);
     if (conn == NULL)
     {
-        return AI_ERR_NET;
+        return CHAT_ERR_NET;
     }
 
-    netconn_set_recvtimeout(conn, AI_RECV_TIMEOUT_MS);
+    netconn_set_recvtimeout(conn, CHAT_RECV_TIMEOUT_MS);
 
     err = netconn_connect(conn, &s_server, s_port);
     if (err != ERR_OK)
     {
         netconn_delete(conn);
-        return AI_ERR_NET;
+        return CHAT_ERR_NET;
     }
 
     err = netconn_write(conn, s_req, (size_t)req_len, NETCONN_COPY);
@@ -211,7 +211,7 @@ int ai_ask(const char *text)
     {
         netconn_close(conn);
         netconn_delete(conn);
-        return AI_ERR_NET;
+        return CHAT_ERR_NET;
     }
 
     s_out_len = 0u;
@@ -243,11 +243,11 @@ int ai_ask(const char *text)
                     continue;
                 }
 
-                if (total < AI_MAX_RESP)
+                if (total < CHAT_MAX_RESP)
                 {
-                    ai_body_byte(c);
+                    chat_body_byte(c);
                     total++;
-                    if (total == AI_MAX_RESP)
+                    if (total == CHAT_MAX_RESP)
                     {
                         truncated = 1;
                     }
@@ -263,14 +263,14 @@ int ai_ask(const char *text)
         }
     }
 
-    ai_flush_out();
+    chat_flush_out();
 
     if (truncated != 0)
     {
-        osal_printf("\n...(回答超过 %u 字节，已截断)", (unsigned)AI_MAX_RESP);
+        osal_printf("\n...(回答超过 %u 字节，已截断)", (unsigned)CHAT_MAX_RESP);
     }
 
     netconn_close(conn);
     netconn_delete(conn);
-    return AI_OK;
+    return CHAT_OK;
 }
