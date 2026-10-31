@@ -4,10 +4,11 @@
  * 只用 FatFs 的公开 API + 块设备注册表，不碰 SDIO/SPI 寄存器：
  * 底下是 SD 卡还是别的介质，由 board 注册的块设备决定（drive 0 = blkdev 0）。
  *
- *   fs list            列出已注册的块设备（大小 / 是否就绪）
- *   fs mount           挂载 0: 号卷（第一次访问才真正识别 SD 卡）
+ *   fs dev             列出已注册的块设备（大小 / 是否就绪）
+ *   fs part            打印 MBR 分区表
+ *   fs mount [pt]      挂载 0: 号卷（pt=1~4 指定分区，省略=自动）
  *   fs umount          卸载
- *   fs mkfs            格式化 0: 号卷（⚠️ 会清掉卡上原有分区表和数据）
+ *   fs mkfs [pt]       格式化（省略 pt = 重写整盘分区表！会清数据）
  *   fs ls [path]       列目录，默认 "/"
  *   fs cat <path>      打印文本文件（最多 4KB）
  *   fs write <path> <text...>  写文本文件（覆盖），例: fs write /a.txt hello
@@ -102,7 +103,7 @@ static int fs_path(const char *in, char *out)
 static void fs_usage(void)
 {
     rt_kprintf("用法: fs <子命令> [参数]\n"
-               "  fs list             列出块设备\n"
+               "  fs dev              列出块设备\n"
                "  fs part             打印 MBR 分区表\n"
                "  fs mount [pt]       挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）\n"
                "  fs umount           卸载\n"
@@ -250,7 +251,7 @@ static void fs_do_mount(const char *arg)
     }
 }
 
-static void fs_do_list(void)
+static void fs_do_dev(void)
 {
     int i;
 
@@ -564,9 +565,9 @@ static int fs(int argc, char **argv)
 
     sub = argv[1];
 
-    if (strcmp(sub, "list") == 0)
+    if (strcmp(sub, "dev") == 0)
     {
-        fs_do_list();
+        fs_do_dev();
         return 0;
     }
 
@@ -631,4 +632,4 @@ static int fs(int argc, char **argv)
     }
     return 0;
 }
-MSH_CMD_EXPORT(fs, fs <list|part|mount|mkfs|ls|cat|write|rm|df>: 文件系统);
+MSH_CMD_EXPORT(fs, fs <dev|part|mount|mkfs|ls|cat|write|rm|df>: 文件系统);

@@ -7,7 +7,7 @@
 对应代码：
 
 ```text
-modules/msh/fs_cmd.c          msh 命令（fs list/mount/ls/cat/write/mkfs/df）
+modules/msh/fs_cmd.c          msh 命令（fs dev/part/mount/mkfs/ls/cat/write/rm/df）
 modules/fs/diskio.c           FatFs 的 disk 层：drive ↔ 块设备
 modules/fs/fatfs/ff.c         FatFs 本体（第三方，原样保留）
 modules/fs/fatfs/ffconf.h     本工程的裁剪配置（重点看这个）
@@ -173,7 +173,7 @@ blkdev_register("flash0", &flash_ops, &s_flash, NULL);
 ## 5. 使用（msh 命令）
 
 ```text
-fs list                 列出块设备（下标 / 名字 / 扇区数 / 容量 / 状态）
+fs dev                  列出块设备（下标 / 名字 / 扇区数 / 容量 / 状态）
 fs part                 打印 MBR 分区表（类型 / 起始 LBA / 大小）
 fs mount [pt]           挂载 0:（pt=1~4 指定分区，省略=自动找第一个 FAT）
 fs umount               卸载
@@ -190,11 +190,11 @@ fs df                   总容量 / 剩余空间 / FAT 类型
 典型流程：
 
 ```text
-msh > fs list
+msh > fs dev
 下标 名字            扇区数      容量       状态
 0    sd0             124735488   60905      未初始化
 msh > fs mount
-已挂载 0:
+已挂载 0:（分区 0，自动）
 msh > fs ls
 属性       大小  名字
 d---         0  SYSTEM~1/
@@ -205,7 +205,7 @@ msh > fs cat /readme.txt
 
 ### 上板必须知道的三个行为
 
-1. **第一次 `fs mount` 才识别卡**。`fs list` 里显示「未初始化」是正常的，
+1. **第一次 `fs mount` 才识别卡**。`fs dev` 里显示「未初始化」是正常的，
    `fs mount` 会通过 `blkdev_init()` → `sd_init()` 走完整的 CMD0/CMD8/ACMD41。
 2. **默认挂载的是卡上的第一个 FAT 分区，不是整张卡**。自动搜索会跳过
    exFAT / NTFS / ext4（FatFs 只认 FAT）。先 `fs part` 看分区表，再用
