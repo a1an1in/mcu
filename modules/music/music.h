@@ -2,10 +2,10 @@
  * music.h - 音乐播放模块（FatFs + VS1053）<modules/music/>
  *
  * 依赖：modules/fs（FatFs 卷）+ drivers/audio（VS1053）。
- * 播放放在独立线程里，msh 命令立即返回；`music stop` 会等线程真正退出。
+ * 播放放在独立线程里，msh 命令立即返回；`mplayer stop` 会等线程真正退出。
  *
  * ⚠️ 播放文件用的就是 fs 命令挂载的那个卷（FatFs 的卷是全局的），
- *    所以先 `fs mount`，再 `music play /MUSIC/xxx.mp3`。
+ *    所以先 `fs mount`，再 `mplayer play /MUSIC/xxx.mp3`。
  *    播放期间不要 `fs umount` / `fs mkfs`。
  */
 #ifndef MODULES_MUSIC_MUSIC_H__

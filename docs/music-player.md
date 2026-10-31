@@ -6,7 +6,7 @@
 ## 1. 分层
 
 ```text
-modules/msh/music_cmd.c     msh：music play/stop/vol/info/test
+modules/msh/mplayer_cmd.c     msh：mplayer play/stop/vol/info/test
         │
 modules/music/music.c       播放线程：f_read 4KB → vs1053_write_data
         │  FatFs（复用 fs 命令挂载的卷）      │
@@ -27,7 +27,7 @@ modules/music/music.c       播放线程：f_read 4KB → vs1053_write_data
 | `drivers/audio/vs1053.h/.c` | 芯片协议：寄存器读写、32B 数据块、DREQ 等待、软/硬复位、音量/音调、喇叭、正弦测试。OS 无关 |
 | `drivers/audio/vs1053_config.h` | 板级事实：XCS=PF7、XDCS=PF6、DREQ=PC13、RST=PE6、SPI 速率 |
 | `modules/music/music.c` | 播放线程、打开/读取文件、停止、音量、状态查询 |
-| `modules/msh/music_cmd.c` | msh 命令 |
+| `modules/msh/mplayer_cmd.c` | msh 命令 |
 | `bsp/stm32f103/board.c` | 注册 SPI1、绑定 VS1053、把 XCS/XDCS 拉高、RST 保持低（隔离） |
 
 ## 2. 硬件与总线共享
@@ -62,36 +62,36 @@ modules/music/music.c       播放线程：f_read 4KB → vs1053_write_data
 msh > fs mount
 已挂载 0:（分区 0，自动）
 
-msh > music test
+msh > mplayer test
 正弦测试完成                 ← 喇叭“嘀”两声，先验证硬件通路
 
-msh > music play /MUSIC/SONG01.MP3
-开始播放 /MUSIC/SONG01.MP3（music stop 可停止）
+msh > mplayer play /MUSIC/SONG01.MP3
+开始播放 /MUSIC/SONG01.MP3（mplayer stop 可停止）
 
-msh > music info
+msh > mplayer info
 状态: 播放中
 文件: 0:/MUSIC/SONG01.MP3
 时间: 0:35
 码率: 128 kbps
 音量: 80
 
-msh > music vol 40
+msh > mplayer vol 40
 音量: 40
 
-msh > music stop
+msh > mplayer stop
 已停止
 ```
 
 | 命令 | 说明 |
 |---|---|
-| `music play <path>` | 播放一个文件；路径规则与 `fs` 相同（`/x` 绝对、`x` 相对当前目录） |
-| `music stop` | 停止并等线程退出（最多 2s） |
-| `music vol [0-100]` | 查询/设置音量，播放中也可调 |
-| `music info` | 状态、解码时间、码率、音量 |
-| `music test` | 正弦测试（会重置解码器） |
+| `mplayer play <path>` | 播放一个文件；路径规则与 `fs` 相同（`/x` 绝对、`x` 相对当前目录） |
+| `mplayer stop` | 停止并等线程退出（最多 2s） |
+| `mplayer vol [0-100]` | 查询/设置音量，播放中也可调 |
+| `mplayer info` | 状态、解码时间、码率、音量 |
+| `mplayer test` | 正弦测试（会重置解码器） |
 
 **前置条件**：先 `fs mount`（播放用的就是 fs 命令挂载的卷）。
-播放期间 `fs umount` / `fs mkfs` 会被拒绝，先 `music stop`。
+播放期间 `fs umount` / `fs mkfs` 会被拒绝，先 `mplayer stop`。
 
 ## 4. 支持的格式
 
@@ -138,7 +138,7 @@ FLAC / OGG 需要加载官方 patch（`patch_flac.h` / `patch_spec.h`），本�
 
 | 限制 | 说明 |
 |---|---|
-| 没有播放列表 | 一次一个文件；下一首手动 `music play` |
+| 没有播放列表 | 一次一个文件；下一首手动 `mplayer play` |
 | 没有暂停/seek | 只有 stop；需要的话可在 VS1053 上做 `f_lseek` + 重新送数据 |
 | 没有 FLAC/OGG patch | 见第 4 节 |
 | 播放时网络会变慢 | 共用 SPI1，每 32B 抢一次锁；不会冲突，但吞吐会受影响 |
@@ -146,9 +146,9 @@ FLAC / OGG 需要加载官方 patch（`patch_flac.h` / `patch_spec.h`），本�
 
 ## 8. 上板验证顺序
 
-1. `music test` —— 听到两声“嘀”，说明 SPI1、复位、DREQ、功放都通；
+1. `mplayer test` —— 听到两声“嘀”，说明 SPI1、复位、DREQ、功放都通；
 2. `fs mount` + `fs ls /MUSIC` —— 确认文件可见；
-3. `music play /MUSIC/xxx.mp3` —— 正常出声；
-4. 播放中 `music vol 20` / `music vol 90` —— 音量变化；
-5. `music stop` —— 立即停、无长尾爆音；
+3. `mplayer play /MUSIC/xxx.mp3` —— 正常出声；
+4. 播放中 `mplayer vol 20` / `mplayer vol 90` —— 音量变化；
+5. `mplayer stop` —— 立即停、无长尾爆音；
 6. 播放中 `ping` —— 网络不丢包（共享 SPI1 的锁是否生效）。

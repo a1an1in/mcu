@@ -9,8 +9,8 @@
  * 至少要几十 KB RAM 和上百 KB Flash，还要处理证书/时间，性价比很低。
  *
  * 用法（msh）：
- *   ai server 192.168.1.100 8765
- *   ai ask 用一个 GPIO 控制 LED 的代码怎么写
+ *   chat server 192.168.1.100 8765
+ *   chat ask 用一个 GPIO 控制 LED 的代码怎么写
  */
 #ifndef MODULES_AI_AI_H__
 #define MODULES_AI_AI_H__
@@ -23,7 +23,7 @@ extern "C" {
 
 #define AI_OK               0
 #define AI_ERR_PARAM        (-1)
-#define AI_ERR_NOSERVER     (-2)    /* 还没 ai server */
+#define AI_ERR_NOSERVER     (-2)    /* 还没 chat server */
 #define AI_ERR_NET          (-3)    /* 连不上 / 发送失败 */
 #define AI_ERR_TOOBIG       (-4)    /* 问题太长，请求缓冲区装不下 */
 

@@ -178,7 +178,7 @@ static void voice_cycle(void)
     }
     if (ai_get_server(ip, sizeof(ip), &port) != AI_OK)
     {
-        osal_printf("\n[voice] 先 ai server <PC_IP> [port]\n");
+        osal_printf("\n[voice] 先 chat server <PC_IP> [port]\n");
         return;
     }
     if (ip4addr_aton(ip, &addr) == 0)

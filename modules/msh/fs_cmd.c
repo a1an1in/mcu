@@ -219,7 +219,7 @@ static void fs_do_mount(const char *arg)
 
     if ((music_is_playing() != 0) || (recorder_is_recording() != 0))
     {
-        rt_kprintf("正在播放/录音，先 music stop / record stop 再重新挂载\n");
+        rt_kprintf("正在播放/录音，先 mplayer stop / record stop 再重新挂载\n");
         return;
     }
 
@@ -276,7 +276,7 @@ static void fs_do_umount(void)
     }
     if ((music_is_playing() != 0) || (recorder_is_recording() != 0))
     {
-        rt_kprintf("正在播放/录音，先 music stop / record stop 再卸载\n");
+        rt_kprintf("正在播放/录音，先 mplayer stop / record stop 再卸载\n");
         return;
     }
     (void)f_mount(NULL, FS_DRIVE, 0);
@@ -303,7 +303,7 @@ static void fs_do_mkfs(const char *arg)
 
     if ((music_is_playing() != 0) || (recorder_is_recording() != 0))
     {
-        rt_kprintf("正在播放/录音，先 music stop / record stop 再格式化\n");
+        rt_kprintf("正在播放/录音，先 mplayer stop / record stop 再格式化\n");
         return;
     }
 

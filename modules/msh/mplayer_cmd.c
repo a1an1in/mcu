@@ -1,13 +1,13 @@
 /*
- * music_cmd.c - 音乐播放器的 msh 命令 <modules/msh/>
+ * mplayer_cmd.c - 音乐播放器的 msh 命令 <modules/msh/>
  *
  * 只调 modules/music（再往下是 FatFs + VS1053），不碰 SPI/GPIO 寄存器。
  *
- *   music play <path>   播放一个文件（先 fs mount）
- *   music stop          停止
- *   music vol [0-100]   查询/设置音量
- *   music info          播放状态 / 解码时间 / 码率
- *   music test          正弦测试（喇叭“嘀——”）
+ *   mplayer play <path>   播放一个文件（先 fs mount）
+ *   mplayer stop          停止
+ *   mplayer vol [0-100]   查询/设置音量
+ *   mplayer info          播放状态 / 解码时间 / 码率
+ *   mplayer test          正弦测试（喇叭“嘀——”）
  */
 #include <rtthread.h>
 #include <stdlib.h>
@@ -22,7 +22,7 @@ static const char *music_err_str(int ret)
     {
     case MUSIC_OK:          return "OK";
     case MUSIC_ERR_PARAM:   return "参数非法（路径为空 / 音量不在 0~100）";
-    case MUSIC_ERR_BUSY:    return "正在播放，先 music stop";
+    case MUSIC_ERR_BUSY:    return "正在播放，先 mplayer stop";
     case MUSIC_ERR_NODEV:   return "没有 VS1053（板级 bind 失败）";
     case MUSIC_ERR_IO:      return "IO 错误（文件打不开 / 解码器无响应）";
     default:                return "未知错误";
@@ -31,12 +31,12 @@ static const char *music_err_str(int ret)
 
 static void music_usage(void)
 {
-    rt_kprintf("用法: music <子命令> [参数]\n");
-    rt_kprintf("  music play <path>   播放文件，例: music play /MUSIC/a.mp3\n");
-    rt_kprintf("  music stop          停止播放\n");
-    rt_kprintf("  music vol [0-100]   查询/设置音量\n");
-    rt_kprintf("  music info          播放状态 / 时间 / 码率\n");
-    rt_kprintf("  music test          正弦测试\n");
+    rt_kprintf("用法: mplayer <子命令> [参数]\n");
+    rt_kprintf("  mplayer play <path>   播放文件，例: mplayer play /MUSIC/a.mp3\n");
+    rt_kprintf("  mplayer stop          停止播放\n");
+    rt_kprintf("  mplayer vol [0-100]   查询/设置音量\n");
+    rt_kprintf("  mplayer info          播放状态 / 时间 / 码率\n");
+    rt_kprintf("  mplayer test          正弦测试\n");
 }
 
 static void music_do_info(void)
@@ -61,7 +61,7 @@ static void music_do_info(void)
     rt_kprintf("音量: %d\n", music_get_volume());
 }
 
-static int music(int argc, char **argv)
+static int mplayer(int argc, char **argv)
 {
     const char *sub;
 
@@ -83,13 +83,13 @@ static int music(int argc, char **argv)
         }
         if (argc < 3)
         {
-            rt_kprintf("用法: music play <path>\n");
+            rt_kprintf("用法: mplayer play <path>\n");
             return 0;
         }
         ret = music_play(argv[2]);
         if (ret == MUSIC_OK)
         {
-            rt_kprintf("开始播放 %s（%s）\n", argv[2], "music stop 可停止");
+            rt_kprintf("开始播放 %s（%s）\n", argv[2], "mplayer stop 可停止");
         }
         else
         {
@@ -175,4 +175,4 @@ static int music(int argc, char **argv)
     music_usage();
     return 0;
 }
-MSH_CMD_EXPORT(music, music <play|stop|vol|info|test>: VS1053 音乐播放器);
+MSH_CMD_EXPORT(mplayer, mplayer <play|stop|vol|info|test>: VS1053 音乐播放器);

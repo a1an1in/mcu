@@ -1,6 +1,6 @@
-# 大模型对话：`ai` 命令（板子 → PC 网关 → DeepSeek）
+# 大模型对话：`chat` 命令（板子 → PC 网关 → DeepSeek）
 
-板子上的 `ai` 命令不是直接连 DeepSeek，而是把问题发给 PC 上的
+板子上的 `chat` 命令不是直接连 DeepSeek，而是把问题发给 PC 上的
 `tools/llm_bridge.py`，由 PC 用你的 API Key 走 HTTPS。原因如下。
 
 ## 1. 为什么不直接 HTTPS
@@ -55,7 +55,7 @@ python tools/llm_bridge.py
 ```text
 [bridge] listening on 0.0.0.0:8765
 [bridge] model=deepseek-chat  base=https://api.deepseek.com  max_tokens=800
-[bridge] board command: ai server 192.168.1.100 8765
+[bridge] board command: chat server 192.168.1.100 8765
 [bridge] Ctrl+C 停止
 ```
 
@@ -72,24 +72,24 @@ python tools/llm_bridge.py
 ## 3. 板子端：配置与提问
 
 ```text
-msh > ai server 192.168.1.100 8765
+msh > chat server 192.168.1.100 8765
 网关: 192.168.1.100:8765
   确认 PC 上已运行: python tools/llm_bridge.py
 
-msh > ai ask 用一个 GPIO 控制 LED 的代码怎么写
+msh > chat ask 用一个 GPIO 控制 LED 的代码怎么写
 正在请求大模型...（最长等 20 秒）
 （回答……）
 
-msh > ai info
+msh > chat info
 网关: 192.168.1.100:8765
 模型 / API Key: 由 PC 端 llm_bridge.py 的环境变量决定
 ```
 
 | 命令 | 说明 |
 |---|---|
-| `ai server <ip> [port]` | 设置 PC 网关（默认端口 8765） |
-| `ai ask <text...>` | 发送问题，打印纯文本回答 |
-| `ai info` | 查看当前网关 |
+| `chat server <ip> [port]` | 设置 PC 网关（默认端口 8765） |
+| `chat ask <text...>` | 发送问题，打印纯文本回答 |
+| `chat info` | 查看当前网关 |
 
 前置条件：板子网络已经起来（`ifconfig` 有 IP，`ping <PC_IP>` 通）。
 
@@ -116,7 +116,7 @@ Connection: close
 | 回答长度 | 板子最多打印 4KB，超出提示截断 |
 | 超时 | 20 秒；超时会打印“连不上/失败” |
 | 无流式输出 | 等完整回答后一次打印 |
-| 无上下文 | 每次 `ai ask` 都是独立一问一答；不保存会话 |
+| 无上下文 | 每次 `chat ask` 都是独立一问一答；不保存会话 |
 | 无鉴权 | 网关只建议在可信局域网使用；不要在公网暴露 8765 |
 
 ## 6. 资源
@@ -133,7 +133,7 @@ Connection: close
 
 | 现象 | 检查 |
 |---|---|
-| `连不上 PC 网关` | 板子 `ping <PC_IP>`；Windows 防火墙是否放行 8765；`ai server` 的 IP 是否是 PC 的局域网 IP |
+| `连不上 PC 网关` | 板子 `ping <PC_IP>`；Windows 防火墙是否放行 8765；`chat server` 的 IP 是否是 PC 的局域网 IP |
 | `[bridge] API HTTP 401` | API Key 错了/过期 |
 | `[bridge] API HTTP 400 ... model` | `LLM_MODEL` 写错，换成服务商支持的 ID |
 | 回答是乱码 | 串口终端要是 UTF-8；bridge 与板子都按 UTF-8 传 |

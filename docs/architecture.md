@@ -23,7 +23,7 @@
   用法与硬件连线见 `docs/music-player.md`；**录音**见 `modules/recorder` 与
   `docs/recorder.md`（WAV / 8kHz / 16bit / 单声道）。
 - **大模型对话**：`modules/ai`（明文 HTTP 客户端）+ `tools/llm_bridge.py`（PC 端
-  HTTPS 转发，API Key 不落板子），用法见 `docs/ai.md`。
+  HTTPS 转发，API Key 不落板子），用法见 `docs/chat.md`。
 - **语音对话**：按住 KEY0 流式录音 → PC 做 ASR/LLM/TTS → 边下边播，
   见 `modules/voice` 与 `docs/voice.md`。
 - **OSAL**：定义线程 / 信号量 / 互斥量 / 消息队列 / 定时器 / 动态内存 / 打印的统一接口。

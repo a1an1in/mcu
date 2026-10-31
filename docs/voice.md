@@ -95,13 +95,13 @@ TTS 默认用 **edge-tts**（微软 Edge 的神经网络语音，很自然），
 [voice] ASR 就绪
 [bridge] voice=on  asr=base  tts=edge(zh-CN-XiaoxiaoNeural)
 [voice] history=6 轮  idle_reset=600s  max_chars=200  max_tokens=500
-[bridge] board command: ai server 10.10.10.115 8765
+[bridge] board command: chat server 10.10.10.115 8765
 ```
 
 ## 3. 板子端
 
 ```text
-msh > ai server 10.10.10.115 8765
+msh > chat server 10.10.10.115 8765
 msh > voice info
 语音键: on（按住 KEY0 说话）
 状态: 空闲
@@ -118,7 +118,7 @@ msh > voice info
 | 命令 | 说明 |
 |---|---|
 | `voice key [on\|off]` | 打开/关闭 KEY0 语音键（默认 on） |
-| `voice vol [0-100]` | 查询/设置播放音量（和 `music vol` 共用） |
+| `voice vol [0-100]` | 查询/设置播放音量（和 `mplayer vol` 共用） |
 | `voice gain [0-15]` | 查询/设置 MIC 增益（0 = 自动 AGC，默认 4） |
 | `voice info` | 状态 + 网关 |
 
@@ -178,8 +178,8 @@ PC 端（本机，8k PCM，2.5 秒问题）：
 | 现象 | 原因 |
 |---|---|
 | 串口打印 `语音未启用（faster-whisper…）` | PC 没装 faster-whisper 或模型下载失败；看 bridge 日志 |
-| `连不上网关` | 板子没 `ai server` / IP 错 / 防火墙（Python 已在 Public 放行） |
-| 识别总是空 | MIC 增益低：`voice gain 8`（0~15） |
+| `连不上网关` | 板子没 `chat server` / IP 错 / 防火墙（Python 已在 Public 放行） |
+| 识别总是空 | MIC 增益低：`voice gain 8`（0~15），或先用 `mic 2 4` 看电平 |
 | 回答是“没听清” | 按键时间太短（<0.25s）或 MIC 没声音 |
 | 声音还是机械音 | edge-tts 没装上/联网失败，回退到了 SAPI；看 bridge 日志里的 `tts=` |
 | edge 报错 | 检查网络；`pip install edge-tts`；换 `TTS_EDGE_VOICE` |

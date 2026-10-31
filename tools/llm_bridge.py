@@ -485,7 +485,7 @@ def main():
               % (args.voice_history_turns, args.voice_idle_reset,
                  args.voice_max_chars, args.voice_max_tokens))
     for ip in local_ips():
-        print("[bridge] board command: ai server %s %d" % (ip, args.port))
+        print("[bridge] board command: chat server %s %d" % (ip, args.port))
     print("[bridge] Ctrl+C 停止")
 
     try:

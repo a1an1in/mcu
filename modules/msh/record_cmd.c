@@ -78,7 +78,7 @@ static int record(int argc, char **argv)
         /* 录音和解码共用 VS1053：放歌时不允许开始录音 */
         if (music_is_playing() != 0)
         {
-            rt_kprintf("正在播放音乐，先 music stop 再录音\n");
+            rt_kprintf("正在播放音乐，先 mplayer stop 再录音\n");
             return 0;
         }
 

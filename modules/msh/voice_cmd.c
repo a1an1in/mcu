@@ -18,7 +18,7 @@ static void voice_usage(void)
 {
     rt_kprintf("用法: voice <key|vol|gain|info>\n");
     rt_kprintf("  voice key [on|off]  打开/关闭 KEY0 语音键（默认 on）\n");
-    rt_kprintf("  voice vol [0-100]   查询/设置播放音量（和 music vol 共用）\n");
+    rt_kprintf("  voice vol [0-100]   查询/设置播放音量（和 mplayer vol 共用）\n");
     rt_kprintf("  voice gain [0-15]   查询/设置 MIC 增益（0=自动 AGC，默认 4）\n");
     rt_kprintf("  voice info          查看语音键 / 网关 / 音量状态\n");
     rt_kprintf("  用法: 按住 KEY0 说话，松开后自动识别、回答并播放\n");
@@ -68,7 +68,7 @@ static int voice(int argc, char **argv)
         }
         else
         {
-            rt_kprintf("网关: 未设置（先 ai server <PC_IP> [port]）\n");
+            rt_kprintf("网关: 未设置（先 chat server <PC_IP> [port]）\n");
         }
         return 0;
     }

@@ -39,9 +39,9 @@ if(RTOS STREQUAL "rt-thread")
         msh/flash_cmd.c
         msh/sd_cmd.c
         msh/fs_cmd.c
-        msh/music_cmd.c
+        msh/mplayer_cmd.c
         msh/record_cmd.c
-        msh/ai_cmd.c
+        msh/chat_cmd.c
         msh/voice_cmd.c
         msh/test_cmd.c
     )

@@ -1,9 +1,9 @@
 /*
- * ai_cmd.c - 大模型对话的 msh 命令 <modules/msh/>
+ * chat_cmd.c - 大模型对话的 msh 命令 <modules/msh/>
  *
- *   ai server <ip> [port]   设置 PC 网关（默认端口 8765）
- *   ai ask <text...>        发一个问题并打印回答
- *   ai info                 查看当前网关配置
+ *   chat server <ip> [port]   设置 PC 网关（默认端口 8765）
+ *   chat ask <text...>        发一个问题并打印回答
+ *   chat info                 查看当前网关配置
  *
  * 板子只发明文 HTTP 到 PC；HTTPS 与 API Key 都在 PC 的
  * tools/llm_bridge.py 里处理。
@@ -20,7 +20,7 @@ static const char *ai_err_str(int ret)
     {
     case AI_OK:             return "OK";
     case AI_ERR_PARAM:      return "参数非法（IP / 端口 / 问题为空）";
-    case AI_ERR_NOSERVER:   return "还没设置网关，先 ai server <PC_IP> [port]";
+    case AI_ERR_NOSERVER:   return "还没设置网关，先 chat server <PC_IP> [port]";
     case AI_ERR_NET:        return "连不上 PC 网关（IP / 防火墙 / bridge 是否在跑？）";
     case AI_ERR_TOOBIG:     return "问题太长，缩短一点再试";
     default:                return "未知错误";
@@ -29,14 +29,14 @@ static const char *ai_err_str(int ret)
 
 static void ai_usage(void)
 {
-    rt_kprintf("用法: ai <server|ask|info>\n");
-    rt_kprintf("  ai server <ip> [port]   设置 PC 网关（默认 8765）\n");
-    rt_kprintf("  ai ask <text...>        问大模型，例: ai ask 你好\n");
-    rt_kprintf("  ai info                 查看网关配置\n");
+    rt_kprintf("用法: chat <server|ask|info>\n");
+    rt_kprintf("  chat server <ip> [port]   设置 PC 网关（默认 8765）\n");
+    rt_kprintf("  chat ask <text...>        问大模型，例: chat ask 你好\n");
+    rt_kprintf("  chat info                 查看网关配置\n");
     rt_kprintf("  说明: 板子发明文 HTTP 到 PC，HTTPS/API Key 在 PC 端处理\n");
 }
 
-static int ai(int argc, char **argv)
+static int chat(int argc, char **argv)
 {
     const char *sub;
 
@@ -54,7 +54,7 @@ static int ai(int argc, char **argv)
 
         if (argc < 3)
         {
-            rt_kprintf("用法: ai server <ip> [port]\n");
+            rt_kprintf("用法: chat server <ip> [port]\n");
             return 0;
         }
         if (argc > 3)
@@ -91,7 +91,7 @@ static int ai(int argc, char **argv)
 
         if (argc < 3)
         {
-            rt_kprintf("用法: ai ask <text...>\n");
+            rt_kprintf("用法: chat ask <text...>\n");
             return 0;
         }
 
@@ -135,7 +135,7 @@ static int ai(int argc, char **argv)
 
         if (ai_get_server(ip, sizeof(ip), &port) != AI_OK)
         {
-            rt_kprintf("网关: 未设置（ai server <PC_IP> [port]）\n");
+            rt_kprintf("网关: 未设置（chat server <PC_IP> [port]）\n");
             return 0;
         }
         rt_kprintf("网关: %s:%u\n", ip, (unsigned)port);
@@ -153,4 +153,4 @@ static int ai(int argc, char **argv)
     ai_usage();
     return 0;
 }
-MSH_CMD_EXPORT(ai, ai <server|ask|info>: 通过 PC 网关和大模型对话);
+MSH_CMD_EXPORT(chat, chat <server|ask|info>: 通过 PC 网关和大模型对话);

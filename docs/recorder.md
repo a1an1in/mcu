@@ -98,8 +98,8 @@ host 单测 `tests/recorder/test_wav.c` 把字段逐字节钉住（11/11 通过�
 ## 6. 与播放的关系
 
 - 录音和播放共用 VS1053，**不能同时进行**：
-  - 放歌时 `record start` → 提示先 `music stop`；
-  - 录音时 `music play` / `music test` → 提示先 `record stop`；
+  - 放歌时 `record start` → 提示先 `mplayer stop`；
+  - 录音时 `mplayer play` / `mplayer test` → 提示先 `record stop`；
 - 录音期间 `fs umount` / `fs mkfs` / `fs mount` 会被拒绝，避免拆掉正在写的卷；
 - 录音时板载功放关闭，听不到 MIC 直通（正常）。
 
@@ -120,7 +120,7 @@ host 单测 `tests/recorder/test_wav.c` 把字段逐字节钉住（11/11 通过�
 3. `record stop`；
 4. `fs ls /RECORDER` 看到 `REC00000.WAV`；
 5. 把卡插到 PC，用播放器打开 WAV：应能听到刚才的录音；
-6. 或直接在板上 `music play /RECORDER/REC00000.WAV` 回放。
+6. 或直接在板上 `mplayer play /RECORDER/REC00000.WAV` 回放。
 
 如果录出来全是静音：先确认 `gain` 不是 0（自动 AGC 在小板子上可能反应慢），
 再试 `record start 0 8`；如果仍然静音，检查板载 MIC 是否焊好/选对了输入。
