@@ -19,7 +19,7 @@ msh > mplayer test
 
 | 检查 | 说明 |
 |---|---|
-| `mplayer vol` / `voice vol` | 不要是 0；先 `voice vol 80` |
+| `mplayer vol` / `chat voice vol` | 不要是 0；先 `chat voice vol 80` |
 | 耳机/喇叭插哪 | 板载功放推的是 SPEAKER 座子；耳机要插 PHONE 口 |
 | 功放供电 | 战舰 V4 的 HT6872 需要 5V；只插 USB 时确认 5V 跳线/开关 |
 | VS1053 复位 | `mplayer test` 会释放 RST；若之前 `video`/CH395 把它按住，重上电再试 |
@@ -76,9 +76,9 @@ msh > record start 5 8     # 8 倍
 ### 2.3 语音链路专用的增益
 
 ```text
-msh > voice gain 8         # 0~15，默认 4
-msh > voice vol 80         # 回答音量
-msh > voice info
+msh > chat voice gain 8         # 0~15，默认 4
+msh > chat voice vol 80         # 回答音量
+msh > chat voice
 ```
 
 ## 3. 语音对话链路
@@ -87,7 +87,7 @@ msh > voice info
 
 ```text
 msh > chat server 10.10.10.115 8765
-msh > voice info
+msh > chat voice
 按住 KEY0 说话，松开
 ```
 
@@ -110,10 +110,10 @@ msh > voice info
 
 | 日志 | 含义 / 下一步 |
 |---|---|
-| `heard` 为空或“没听清” | MIC 太小/太远：`mic 2 8` 看电平，再 `voice gain 8` |
+| `heard` 为空或“没听清” | MIC 太小/太远：`mic 2 8` 看电平，再 `chat voice gain 8` |
 | `heard` 是错的字 | ASR 识别问题：靠近 MIC、说慢一点；PC 端 `ASR_MODEL=small` |
 | `heard` 对，但回答为空/报错 | API Key / 模型名 / 余额；看 `[bridge] API HTTP ...` |
-| 回答文字对，但板子没声 | `voice vol`、喇叭、MP3 解码；先用 `mplayer test` 确认 |
+| 回答文字对，但板子没声 | `chat voice vol`、喇叭、MP3 解码；先用 `mplayer test` 确认 |
 | 第一次特别慢 | ASR 模型首次下载，之后缓存 |
 
 ### 3.3 不接板子，只测 PC 链路

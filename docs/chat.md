@@ -76,7 +76,7 @@ msh > chat server 192.168.1.100 8765
 网关: 192.168.1.100:8765
   确认 PC 上已运行: python tools/llm_bridge.py
 
-msh > chat ask 用一个 GPIO 控制 LED 的代码怎么写
+msh > chat text 用一个 GPIO 控制 LED 的代码怎么写
 正在请求大模型...（最长等 20 秒）
 （回答……）
 
@@ -88,10 +88,17 @@ msh > chat info
 | 命令 | 说明 |
 |---|---|
 | `chat server <ip> [port]` | 设置 PC 网关（默认端口 8765） |
-| `chat ask <text...>` | 发送问题，打印纯文本回答 |
-| `chat info` | 查看当前网关 |
+| `chat text <text...>` | 文本对话，打印纯文本回答 |
+| `chat voice` | 语音状态（KEY0 / 音量 / MIC 增益 / 网关） |
+| `chat voice [on\|off]` | 打开/关闭 KEY0 语音键 |
+| `chat voice vol [0-100]` | 语音播放音量（和 `mplayer vol` 共用） |
+| `chat voice gain [0-15]` | MIC 增益（0 = 自动 AGC，默认 4） |
+| `chat info` | 网关 + 文本/语音状态 |
 
 前置条件：板子网络已经起来（`ifconfig` 有 IP，`ping <PC_IP>` 通）。
+
+语音用法：按住 KEY0 说话，松开后自动 ASR → 大模型 → TTS → 播放；
+详细流程和调试见 `docs/voice.md`、`docs/audio-debug.md`。
 
 ## 4. 协议（板子 ↔ 网关）
 
@@ -116,7 +123,7 @@ Connection: close
 | 回答长度 | 板子最多打印 4KB，超出提示截断 |
 | 超时 | 20 秒；超时会打印“连不上/失败” |
 | 无流式输出 | 等完整回答后一次打印 |
-| 无上下文 | 每次 `chat ask` 都是独立一问一答；不保存会话 |
+| 无上下文 | 每次 `chat text` 都是独立一问一答；不保存会话 |
 | 无鉴权 | 网关只建议在可信局域网使用；不要在公网暴露 8765 |
 
 ## 6. 资源

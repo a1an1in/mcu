@@ -42,7 +42,6 @@ if(RTOS STREQUAL "rt-thread")
         msh/mplayer_cmd.c
         msh/record_cmd.c
         msh/chat_cmd.c
-        msh/voice_cmd.c
         msh/test_cmd.c
     )
 endif()
