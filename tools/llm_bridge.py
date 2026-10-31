@@ -410,6 +410,11 @@ def main():
         except Exception:
             pass
 
+    if port_in_use(args.port):
+        print("[bridge] 端口 %d 已被占用（可能已经有一个网关在跑）。" % args.port)
+        print("[bridge] 先结束旧进程，再启动这一个；否则两个网关会各记一半对话历史。")
+        return 3
+
     bridge = Bridge(args.base_url, args.model, args.api_key,
                     args.system, args.max_tokens, args.timeout)
 
@@ -427,11 +432,6 @@ def main():
             print("[voice] ASR 不可用: %s" % e)
             print("[voice] 先运行: pip install faster-whisper")
             voice = None
-
-    if port_in_use(args.port):
-        print("[bridge] 端口 %d 已被占用（可能已经有一个网关在跑）。" % args.port)
-        print("[bridge] 先结束旧进程，再启动这一个；否则两个网关会各记一半对话历史。")
-        return 3
 
     try:
         httpd = ThreadingHTTPServer((args.host, args.port), make_handler(bridge, voice))
