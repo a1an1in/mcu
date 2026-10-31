@@ -155,6 +155,10 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\a1an1in\workspace\mcu\tools\s
 
 核心就两行：`DtrEnable = $false` / `RtsEnable = $false`。
 
+> 脚本默认还把**键盘输入转发给板子**：可以直接在这个窗口敲 msh 命令，
+> ↑/↓ 翻历史、Backspace 删字符、Tab 补全。脚本化运行或 stdin 被重定向时
+> 自动只收不发，也可以显式加 `-NoInput`。
+
 > 其实按 §4.3 的规律，**关键是 `RtsEnable = $false`** —— 只要 RTS 不断言，BOOT0 恒为 0，就进不了 ROM。两个都设 `$false` 最保险。
 
 其它工具：

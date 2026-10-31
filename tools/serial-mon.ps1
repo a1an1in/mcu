@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Safe serial monitor for ATK WarShip V4 (STM32F103).
+  Safe interactive serial monitor for ATK WarShip V4 (STM32F103).
   Opens the port with DTR and RTS DE-ASSERTED so the board's on-board
   "one-key download" circuit (CH340 DTR#/RTS# -> Q2/Q3 -> BOOT0/RESET)
   cannot pull BOOT0 high and make the MCU boot into ROM on reset.
@@ -11,6 +11,17 @@
   can land in the system-memory bootloader (ROM) instead of Flash
   (and some combinations hold the MCU in reset).
   Opening with DtrEnable=$false, RtsEnable=$false avoids that.
+
+  Interactive input:
+    By default the keyboard is forwarded to the board, so you can type msh
+    commands directly in this window. Special keys are translated:
+      Enter       -> CR (0x0D)
+      Backspace   -> 0x08
+      Tab         -> 0x09
+      Esc         -> 0x1B
+      Up/Down     -> ESC [ A / ESC [ B   (msh command history)
+      Left/Right  -> ESC [ D / ESC [ C
+    Use -NoInput for scripted runs (or when stdin is redirected).
 
 .PARAMETER Port
   COM port. If omitted, the first CH340 port is used, otherwise the first COM port.
@@ -29,9 +40,13 @@
   The log file is always written as UTF-8 (no BOM).
 
 .PARAMETER Charset
-  Charset of the text sent by the MCU: utf8 (default) | gbk | ascii | latin1.
+  Charset of the text sent/received: utf8 (default) | gbk | ascii | latin1.
   NB: System.IO.Ports.SerialPort defaults to ASCII, which silently turns every
   non-ASCII byte into '?'. This firmware prints UTF-8, so the default is utf8.
+
+.PARAMETER NoInput
+  Do not read the keyboard; only print what the board sends. Automatically
+  enabled when stdin is redirected.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\serial-mon.ps1
@@ -39,6 +54,8 @@
   powershell -ExecutionPolicy Bypass -File tools\serial-mon.ps1 -Port COM6 -Baud 115200
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File tools\serial-mon.ps1 -Bad -Seconds 8
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File tools\serial-mon.ps1 -Port COM4 -Log uart.log
 #>
 param(
   [string]$Port = "",
@@ -46,7 +63,8 @@ param(
   [switch]$Bad,
   [int]$Seconds = 0,
   [string]$Log = "",
-  [string]$Charset = "utf8"
+  [string]$Charset = "utf8",
+  [switch]$NoInput
 )
 
 if (-not $Port) {
@@ -70,6 +88,9 @@ switch ($Charset.ToLower()) {
   default  { Write-Host ("[mon] unknown charset '{0}', falling back to utf8" -f $Charset) -ForegroundColor Yellow; $enc = $utf8NoBom }
 }
 
+# Keyboard forwarding needs a real console. Redirected stdin (script/test) => RX only.
+$interactive = (-not $NoInput) -and (-not [Console]::IsInputRedirected)
+
 $assert = [bool]$Bad
 $sp = New-Object System.IO.Ports.SerialPort
 $sp.PortName    = $Port
@@ -88,13 +109,16 @@ try {
   Write-Host "[mon] hint: another program (MobaXterm / SSCOM / another monitor) may still hold the port; close it and retry." -ForegroundColor Yellow
   exit 2
 }
-Write-Host ("[mon] {0} @ {1}  DTR={2} RTS={3}  charset={4}" -f $Port, $Baud, $assert, $assert, $Charset) -ForegroundColor Green
+Write-Host ("[mon] {0} @ {1}  DTR={2} RTS={3}  charset={4}  input={5}" -f `
+            $Port, $Baud, $assert, $assert, $Charset, $(if ($interactive) { "on (Ctrl+C 退出)" } else { "off" })) -ForegroundColor Green
 if ($Log) { Write-Host ("[mon] logging to {0}" -f $Log) -ForegroundColor Green }
 
 $deadline = if ($Seconds -gt 0) { (Get-Date).AddSeconds($Seconds) } else { $null }
 try {
   while ($true) {
     if ($deadline -and (Get-Date) -ge $deadline) { break }
+
+    # ---- board -> PC ----
     try {
       $s = $sp.ReadExisting()
       if ($s) {
@@ -102,6 +126,35 @@ try {
         if ($Log) { [System.IO.File]::AppendAllText($Log, $s, $utf8NoBom) }
       }
     } catch { }
+
+    # ---- PC -> board ----
+    if ($interactive) {
+      while ([Console]::KeyAvailable) {
+        $k = [Console]::ReadKey($true)
+        $bytes = $null
+
+        switch ($k.Key) {
+          'Enter'       { $bytes = [byte[]](13) }
+          'Backspace'   { $bytes = [byte[]](8) }
+          'Tab'         { $bytes = [byte[]](9) }
+          'Escape'      { $bytes = [byte[]](27) }
+          'UpArrow'     { $bytes = [byte[]](27, 91, 65) }
+          'DownArrow'   { $bytes = [byte[]](27, 91, 66) }
+          'RightArrow'  { $bytes = [byte[]](27, 91, 67) }
+          'LeftArrow'   { $bytes = [byte[]](27, 91, 68) }
+          default {
+            if ($k.KeyChar -ne [char]0) {
+              $bytes = $enc.GetBytes([string]$k.KeyChar)
+            }
+          }
+        }
+
+        if ($bytes -and ($bytes.Length -gt 0)) {
+          try { $sp.Write($bytes, 0, $bytes.Length) } catch { }
+        }
+      }
+    }
+
     Start-Sleep -Milliseconds 40
   }
 } finally {
