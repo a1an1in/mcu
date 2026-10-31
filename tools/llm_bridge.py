@@ -50,8 +50,9 @@ DEFAULT_SYSTEM = (
     "必要时给出 C 代码片段，不要长篇大论。"
 )
 DEFAULT_VOICE_SYSTEM = (
-    "你在和用户语音对话。只用一句口语回答，最多 40 个字；"
-    "不要 Markdown、不要代码、不要列表，适合直接朗读。"
+    "你是嵌入式开发助手，正在和用户语音对话。"
+    "回答用中文、口语化，2~4 句话，尽量给出有用的信息，不超过 150 字；"
+    "不要 Markdown、不要代码块、不要列表，适合直接朗读。"
 )
 
 # 可选：tools/llm_bridge.local.json（已在 .gitignore 里），用来“写死” Key，
@@ -87,12 +88,16 @@ class Bridge:
         self.timeout = timeout
 
     def ask(self, text, system=None, max_tokens=None):
+        messages = [
+            {"role": "system", "content": system or self.system},
+            {"role": "user", "content": text},
+        ]
+        return self.chat(messages, max_tokens)
+
+    def chat(self, messages, max_tokens=None):
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system or self.system},
-                {"role": "user", "content": text},
-            ],
+            "messages": messages,
             "stream": False,
             "temperature": 0.7,
             "max_tokens": max_tokens or self.max_tokens,
@@ -123,19 +128,46 @@ class Bridge:
 
 
 class VoiceEngine:
-    """PCM → ASR → LLM → TTS(WAV)。模型只加载一次，串行处理。"""
+    """PCM → ASR → LLM（带上下文）→ TTS(WAV)。模型只加载一次，串行处理。"""
 
     def __init__(self, bridge, asr_model, asr_language, tts_voice, tts_rate,
-                 voice_max_tokens):
+                 voice_max_tokens, history_turns=6, idle_reset=600, max_chars=200):
         self.bridge = bridge
         self.asr_model_name = asr_model
         self.asr_language = asr_language
         self.tts_voice = tts_voice
         self.tts_rate = tts_rate
         self.voice_max_tokens = voice_max_tokens
+        self.history_turns = max(0, int(history_turns))
+        self.idle_reset = max(0, int(idle_reset))
+        self.max_chars = max(40, int(max_chars))
         self._model = None
         self._model_lock = threading.Lock()
         self._run_lock = threading.Lock()
+        self._history = []              # [{"role": "user"/"assistant", ...}]
+        self._last_time = 0.0
+
+    def reset(self):
+        with self._run_lock:
+            self._history = []
+            self._last_time = 0.0
+        print("[voice] 对话历史已清空")
+
+    def ask_with_history(self, text):
+        """把最近 history_turns 轮对话一起送给模型。"""
+        messages = [{"role": "system", "content": DEFAULT_VOICE_SYSTEM}]
+        if self.history_turns > 0:
+            messages.extend(self._history[-self.history_turns * 2:])
+        messages.append({"role": "user", "content": text})
+        answer = self.bridge.chat(messages, max_tokens=self.voice_max_tokens)
+
+        self._history.append({"role": "user", "content": text})
+        self._history.append({"role": "assistant", "content": answer})
+        if self.history_turns > 0:
+            self._history = self._history[-self.history_turns * 2:]
+        else:
+            self._history = []
+        return answer
 
     def preload(self):
         with self._model_lock:
@@ -192,21 +224,28 @@ class VoiceEngine:
 
     def handle(self, pcm):
         with self._run_lock:
+            if (self.idle_reset > 0) and self._last_time and \
+               (time.time() - self._last_time > self.idle_reset):
+                self._history = []
+                print("[voice] 空闲超时，自动清空对话历史")
+
             t0 = time.time()
             heard = self.transcribe(pcm)
             t1 = time.time()
             if heard:
-                answer = self.bridge.ask(heard, system=DEFAULT_VOICE_SYSTEM,
-                                         max_tokens=self.voice_max_tokens)
+                answer = self.ask_with_history(heard)
+                if not answer.strip():
+                    answer = "这个我暂时答不上来，你换个问法试试？"
             else:
                 answer = "我没听清，请再说一遍。"
             t2 = time.time()
-            # 太长的回答朗读会很久，截断到 120 字
-            speak = answer[:120]
+            # 太长的回答朗读会很久，按配置截断
+            speak = answer[:self.max_chars]
             wav = self.synthesize(speak)
             t3 = time.time()
-            print("[voice] asr %.1fs llm %.1fs tts %.1fs | %r -> %r"
-                  % (t1 - t0, t2 - t1, t3 - t2, heard, answer))
+            self._last_time = time.time()
+            print("[voice] asr %.1fs llm %.1fs tts %.1fs | %r -> %r (history %d)"
+                  % (t1 - t0, t2 - t1, t3 - t2, heard, answer, len(self._history) // 2))
             return wav, heard, answer
 
 
@@ -241,6 +280,12 @@ def make_handler(bridge, voice):
                 self._do_ask()
             elif self.path == "/voice":
                 self._do_voice()
+            elif self.path == "/reset":
+                if voice is not None:
+                    voice.reset()
+                    self._send(200, "history cleared")
+                else:
+                    self._send(501, "voice disabled")
             else:
                 self._send(404, "not found")
 
@@ -313,6 +358,14 @@ def local_ips():
     return sorted(i for i in ips if not i.startswith("127."))
 
 
+def port_in_use(port):
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def main():
     cfg = load_local_config()
 
@@ -336,7 +389,13 @@ def main():
     ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
     ap.add_argument("--tts-rate", type=int, default=int(os.environ.get("TTS_RATE") or cfg.get("tts_rate", 2)))
     ap.add_argument("--voice-max-tokens", type=int,
-                    default=int(os.environ.get("VOICE_MAX_TOKENS") or cfg.get("voice_max_tokens", 80)))
+                    default=int(os.environ.get("VOICE_MAX_TOKENS") or cfg.get("voice_max_tokens", 500)))
+    ap.add_argument("--voice-max-chars", type=int,
+                    default=int(os.environ.get("VOICE_MAX_CHARS") or cfg.get("voice_max_chars", 200)))
+    ap.add_argument("--voice-history-turns", type=int,
+                    default=int(os.environ.get("VOICE_HISTORY_TURNS") or cfg.get("voice_history_turns", 6)))
+    ap.add_argument("--voice-idle-reset", type=int,
+                    default=int(os.environ.get("VOICE_IDLE_RESET") or cfg.get("voice_idle_reset", 600)))
     ap.add_argument("--no-voice", action="store_true")
     args = ap.parse_args()
 
@@ -357,7 +416,9 @@ def main():
     voice = None
     if not args.no_voice:
         voice = VoiceEngine(bridge, args.asr_model, args.asr_language,
-                            args.tts_voice, args.tts_rate, args.voice_max_tokens)
+                            args.tts_voice, args.tts_rate, args.voice_max_tokens,
+                            args.voice_history_turns, args.voice_idle_reset,
+                            args.voice_max_chars)
         print("[voice] 预加载 ASR 模型 %s（首次会下载，请稍等）..." % args.asr_model)
         try:
             voice.preload()
@@ -366,6 +427,11 @@ def main():
             print("[voice] ASR 不可用: %s" % e)
             print("[voice] 先运行: pip install faster-whisper")
             voice = None
+
+    if port_in_use(args.port):
+        print("[bridge] 端口 %d 已被占用（可能已经有一个网关在跑）。" % args.port)
+        print("[bridge] 先结束旧进程，再启动这一个；否则两个网关会各记一半对话历史。")
+        return 3
 
     try:
         httpd = ThreadingHTTPServer((args.host, args.port), make_handler(bridge, voice))
@@ -380,6 +446,10 @@ def main():
     print("[bridge] API Key: %s..." % args.api_key[:6])
     print("[bridge] voice=%s  asr=%s  tts=SAPI(%s)"
           % ("on" if voice else "off", args.asr_model, args.tts_voice or "auto zh"))
+    if voice:
+        print("[voice] history=%d 轮  idle_reset=%ds  max_chars=%d  max_tokens=%d"
+              % (args.voice_history_turns, args.voice_idle_reset,
+                 args.voice_max_chars, args.voice_max_tokens))
     for ip in local_ips():
         print("[bridge] board command: ai server %s %d" % (ip, args.port))
     print("[bridge] Ctrl+C 停止")

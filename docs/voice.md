@@ -58,7 +58,10 @@ TTS 用 Windows 自带 SAPI，中文语音（本机是 `Microsoft Huihui Desktop
 | `ASR_LANGUAGE` | `zh` | 识别语言 |
 | `TTS_VOICE` | 自动选 zh-CN | 如 `Microsoft Huihui Desktop` |
 | `TTS_RATE` | `2` | SAPI 语速（-10~10） |
-| `VOICE_MAX_TOKENS` | `80` | 语音回答长度上限 |
+| `VOICE_MAX_TOKENS` | `500` | 语音回答 token 上限（`deepseek-flash` 有推理 token，别太小） |
+| `VOICE_MAX_CHARS` | `200` | 朗读前截断字数 |
+| `VOICE_HISTORY_TURNS` | `6` | 记住最近几轮对话（0 = 不记） |
+| `VOICE_IDLE_RESET` | `600` | 空闲多少秒后自动清空历史 |
 | `--no-voice` | 关 | 只保留文本 `/ask`，不加载 ASR |
 
 启动日志会打印：
@@ -98,7 +101,29 @@ msh > voice info
 - 松键后 VS1053 会重新初始化（恢复播放时钟/音量），与 PC 的 ASR 并行；
 - 正在 `record` 或播放音乐时按 KEY0：语音流程会先拒绝/停止音乐。
 
-## 4. 实测延迟
+## 4. 对话记忆
+
+- 默认记住最近 **6 轮**（用户 + 回答各一条），随问题一起送给模型；
+- 空闲 **10 分钟**没有语音请求会自动清空；
+- 手动清空（PC 上执行）：
+
+  ```powershell
+  Invoke-WebRequest -UseBasicParsing -Method POST -Uri http://10.10.10.115:8765/reset
+  ```
+
+- 回答长度：`VOICE_MAX_TOKENS=500`、`VOICE_MAX_CHARS=200`；
+  想更长/更短改 `llm_bridge.local.json` 或环境变量；
+- ⚠️ **不要同时开两个 `llm_bridge.py`**：Windows 的 `SO_REUSEADDR` 允许两个
+  进程绑同一个端口，请求会被随机分给其中一个，表现就是“上一句记不住”。
+  新版本启动时会检测端口占用并退出；如果已经有多余进程：
+
+  ```powershell
+  Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -match 'llm_bridge' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+  ```
+
+## 5. 实测延迟
 
 PC 端（本机，8k PCM，2.5 秒问题）：
 
@@ -112,7 +137,7 @@ PC 端（本机，8k PCM，2.5 秒问题）：
 板子侧再加：上传（边录边传，不额外等待）+ 回答下载/边下边播（几十 KB~300KB，
 局域网 0.2~1s）。**松键到出声大约 2.5~4 秒**，比文件式（5~10 秒）快一倍以上。
 
-## 5. WAV 头与格式
+## 6. WAV 头与格式
 
 - 录音：8kHz / 16bit / 单声道，**裸 PCM** 上传（无 WAV 头）；
 - PC 用 `wave` 模块加 44 字节头后交给 faster-whisper；
@@ -120,7 +145,7 @@ PC 端（本机，8k PCM，2.5 秒问题）：
 - 板子把整个 WAV（含头）喂 VS1053，由芯片自己解析格式；
 - 超过 120 字的回答会被截断，避免朗读太久。
 
-## 6. 排查
+## 7. 排查
 
 | 现象 | 原因 |
 |---|---|
@@ -131,7 +156,7 @@ PC 端（本机，8k PCM，2.5 秒问题）：
 | 声音卡顿 | 网络太慢/丢包；回答 WAV 较大时 TCP 会背压，不影响正确性 |
 | 第一次特别慢 | 模型首次下载（base 约 145MB），之后缓存 |
 
-## 7. 资源
+## 8. 资源
 
 | 项目 | 增量 |
 |---|---|
