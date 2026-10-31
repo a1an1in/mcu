@@ -50,6 +50,15 @@ void uart_puts(const char *s);
  */
 int uart_getchar(void);
 
+/**
+ * 往接收环形缓冲注入字节（线程上下文）。
+ *
+ * 用途：把板载按键映射成终端的转义序列（如 ↑ = ESC [ A），让 msh 的
+ * 行编辑/历史记录功能像收到键盘输入一样工作。返回实际写入的字节数
+ * （缓冲满时可能小于 len）。中断已关闭保护，可与接收中断并发调用。
+ */
+int uart_inject_rx(const void *buf, unsigned int len);
+
 #ifdef __cplusplus
 }
 #endif

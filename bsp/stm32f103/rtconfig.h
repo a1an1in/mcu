@@ -74,6 +74,8 @@
 #define RT_USING_FINSH             /* 启用 FINSH shell 组件 */
 #define FINSH_USING_MSH            /* 使用 msh 模式（交互式） */
 #define FINSH_USING_SYMTAB         /* 支持 MSH_CMD_EXPORT 导出命令表 */
+#define FINSH_USING_HISTORY        /* 命令历史：终端 ↑/↓ 或板载按键都走它 */
+#define FINSH_HISTORY_LINES     8  /* 保留最近 8 条（每条 FINSH_CMD_SIZE 字节） */
 
 /* ===== 网络：lwIP v2.1.2 + netdev ===== */
 #define RT_USING_LWIP              /* 启用 lwIP TCP/IP 协议栈 */

@@ -35,6 +35,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/sd_cmd.c
         msh/fs_cmd.c
         msh/music_cmd.c
+        msh/shell_history_keys.c
     )
 endif()
 
@@ -52,6 +53,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/fs
     ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
     ${CMAKE_SOURCE_DIR}/modules/music
+    ${CMAKE_SOURCE_DIR}/modules/key
     ${CMAKE_SOURCE_DIR}/drivers/audio
 )
 
