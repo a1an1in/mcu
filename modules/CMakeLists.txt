@@ -11,6 +11,7 @@ add_library(modules OBJECT
     key/key.c
     storage/eeprom_storage.c
     fs/diskio.c
+    fs/fs_util.c
     fs/fatfs/ff.c
 )
 

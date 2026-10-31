@@ -14,6 +14,7 @@
  *   - 写文件 → 关闭 → 重开读回；跨扇区（1KB）数据完整性
  *   - 卸载后重新挂载，内容仍在（持久性）
  *   - 目录遍历、f_unlink
+ *   - 递归删除（非空目录 / 文件 / 尾部 '/' / 根目录拒绝）
  *   - disk_ioctl 的 GET_SECTOR_COUNT / GET_SECTOR_SIZE / GET_BLOCK_SIZE
  */
 #include <stdio.h>
@@ -22,6 +23,7 @@
 #include "blkdev.h"
 #include "diskio.h"
 #include "ff.h"
+#include "fs_util.h"
 
 #define RAM_SECTORS     512u                        /* 512 × 512B = 256KB */
 #define RAM_BYTES       (RAM_SECTORS * BLKDEV_SECTOR_SIZE)
@@ -29,6 +31,7 @@
 static uint8_t s_ram[RAM_BYTES] __attribute__((aligned(4)));
 static uint8_t s_file[2048] __attribute__((aligned(4)));
 static uint8_t s_work[4096] __attribute__((aligned(4)));
+static char s_tree[192] __attribute__((aligned(4)));
 static FATFS s_fs;
 
 static int failures = 0;
@@ -338,6 +341,53 @@ static void test_partition_select(void)
     CHECK_EQ(f_mount(&s_fs, "0:", 1), FR_OK);
 }
 
+static void test_remove_tree(void)
+{
+    FIL fil;
+    FRESULT fr;
+    FILINFO fno;
+    UINT bw = 0;
+
+    /* 建一棵树：/tree/a.txt、/tree/sub/b.txt */
+    CHECK_EQ(f_mkdir("0:/tree"), FR_OK);
+    CHECK_EQ(f_mkdir("0:/tree/sub"), FR_OK);
+
+    CHECK_EQ(f_open(&fil, "0:/tree/a.txt", FA_CREATE_ALWAYS | FA_WRITE), FR_OK);
+    CHECK_EQ(f_write(&fil, "aaa", 3, &bw), FR_OK);
+    CHECK_EQ(f_close(&fil), FR_OK);
+
+    CHECK_EQ(f_open(&fil, "0:/tree/sub/b.txt", FA_CREATE_ALWAYS | FA_WRITE), FR_OK);
+    CHECK_EQ(f_write(&fil, "bbb", 3, &bw), FR_OK);
+    CHECK_EQ(f_close(&fil), FR_OK);
+
+    /* 普通的 f_unlink 只能删空目录：非空必须报 FR_DENIED */
+    CHECK_EQ(f_unlink("0:/tree"), FR_DENIED);
+
+    /* 递归删除 */
+    CHECK_EQ(fs_remove_tree("0:/tree", s_tree, sizeof(s_tree)), FR_OK);
+    CHECK_EQ(f_stat("0:/tree", &fno), FR_NO_FILE);
+
+    /* 带尾部 '/' 也要能用 */
+    CHECK_EQ(f_mkdir("0:/t2"), FR_OK);
+    CHECK_EQ(f_open(&fil, "0:/t2/x.txt", FA_CREATE_ALWAYS | FA_WRITE), FR_OK);
+    CHECK_EQ(f_close(&fil), FR_OK);
+    CHECK_EQ(fs_remove_tree("0:/t2/", s_tree, sizeof(s_tree)), FR_OK);
+    CHECK_EQ(f_stat("0:/t2", &fno), FR_NO_FILE);
+
+    /* 普通文件也能用同一个入口删 */
+    CHECK_EQ(f_open(&fil, "0:/one.txt", FA_CREATE_ALWAYS | FA_WRITE), FR_OK);
+    CHECK_EQ(f_close(&fil), FR_OK);
+    CHECK_EQ(fs_remove_tree("0:/one.txt", s_tree, sizeof(s_tree)), FR_OK);
+    CHECK_EQ(f_stat("0:/one.txt", &fno), FR_NO_FILE);
+
+    /* 不存在 / 根目录 / 坏参数 */
+    CHECK_EQ(fs_remove_tree("0:/nope", s_tree, sizeof(s_tree)), FR_NO_FILE);
+    CHECK_EQ(fs_remove_tree("0:", s_tree, sizeof(s_tree)), FR_INVALID_NAME);
+    CHECK_EQ(fs_remove_tree("0:/", s_tree, sizeof(s_tree)), FR_INVALID_NAME);
+    CHECK_EQ(fs_remove_tree(NULL, s_tree, sizeof(s_tree)), FR_INVALID_PARAMETER);
+    CHECK_EQ(fs_remove_tree("0:/tree", NULL, sizeof(s_tree)), FR_INVALID_PARAMETER);
+}
+
 static void test_remount_and_remove(void)
 {
     FIL fil;
@@ -389,6 +439,7 @@ int main(void)
     test_diskio();
     test_format_and_write();
     test_partition_select();
+    test_remove_tree();
     test_remount_and_remove();
     test_unformatted();
 

@@ -9,6 +9,7 @@
 ```text
 modules/msh/fs_cmd.c          msh 命令（fs dev/part/mount/mkfs/ls/cat/write/rm/df）
 modules/fs/diskio.c           FatFs 的 disk 层：drive ↔ 块设备
+modules/fs/fs_util.c          递归删除（OS 无关，host 可测）
 modules/fs/fatfs/ff.c         FatFs 本体（第三方，原样保留）
 modules/fs/fatfs/ffconf.h     本工程的裁剪配置（重点看这个）
 drivers/block/blkdev.c        512B 块设备接口 + 静态注册表
@@ -181,7 +182,8 @@ fs mkfs [pt]            格式化（pt 省略=重写整盘分区表；pt=1~4 只
 fs ls [path]            列目录（默认 /）
 fs cat <path>           打印文本文件（最多 4KB）
 fs write <path> <text…> 写文本文件（覆盖）
-fs rm <path>            删除文件
+fs mkdir <path>         建目录
+fs rm [-r] <path>       删除文件/空目录；-r 递归删除整棵目录
 fs df                   总容量 / 剩余空间 / FAT 类型
 ```
 
@@ -247,6 +249,8 @@ blkdev_register → blkdev_init → diskio → f_mkfs → f_mount
 - 文件内容、大小、目录项、删除；
 - **分区选择**：强制 `pt=1` 挂到同一个卷、不存在的 `pt=3` 报
   `FR_NO_FILESYSTEM`、恢复 `pt=0` 自动搜索；
+- **递归删除**：非空目录 `f_unlink` 报 `FR_DENIED` → `fs_remove_tree()` 清空后
+  删除；文件、尾部带 `/`、根目录拒绝、坏参数都覆盖；
 - 卸载再挂载内容仍在（证明写真的落到了介质，而不是只改了缓存）。
 
 运行：
@@ -273,7 +277,7 @@ docker run --rm -v "$PWD:/work" -w /work stm32f103-dev sh -c \
 
 | 项目 | 接入前 | 接入后 | 增量 |
 |---|---|---|---|
-| Flash | 148.9 KB | 163.6 KB | **+14.7 KB**（FatFs 本体 + 胶水 + msh 命令） |
+| Flash | 148.9 KB | 164.9 KB | **+16.0 KB**（FatFs 本体 + 胶水 + msh 命令） |
 | RAM | 24.4 KB | 30.0 KB | **+5.6 KB**（mkfs 4KB 工作缓冲 + cat 512B + FATFS/FIL） |
 
 RAM 增量主要来自 `fs_cmd.c` 里的静态缓冲：

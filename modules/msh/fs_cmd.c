@@ -12,7 +12,8 @@
  *   fs ls [path]       列目录，默认 "/"
  *   fs cat <path>      打印文本文件（最多 4KB）
  *   fs write <path> <text...>  写文本文件（覆盖），例: fs write /a.txt hello
- *   fs rm <path>       删除文件
+ *   fs mkdir <path>    建目录
+ *   fs rm [-r] <path>  删除文件/空目录；-r 递归删除整棵目录
  *   fs df              容量与剩余空间
  *
  * 路径写法：可以写 "/dir/file.txt"（自动补成 "0:/dir/file.txt"），
@@ -25,6 +26,7 @@
 #include "blkdev.h"
 #include "diskio.h"
 #include "ff.h"
+#include "fs_util.h"
 
 #define FS_DRIVE            "0:"
 #define FS_PATH_MAX         128
@@ -111,7 +113,8 @@ static void fs_usage(void)
                "  fs ls [path]        列目录，默认 /\n"
                "  fs cat <path>       打印文本文件\n"
                "  fs write <path> <text...>  写文本文件（覆盖）\n"
-               "  fs rm <path>        删除文件\n"
+               "  fs mkdir <path>     建目录\n"
+               "  fs rm [-r] <path>   删除文件/空目录；-r 递归删除\n"
                "  fs df               容量 / 剩余空间\n");
 }
 
@@ -495,14 +498,14 @@ static void fs_do_write(const char *path, int argc, char **argv)
     rt_kprintf("写入 %s，%u 字节\n", p, written);
 }
 
-static void fs_do_rm(const char *path)
+static void fs_do_mkdir(const char *path)
 {
     FRESULT fr;
     char p[FS_PATH_MAX];
 
     if (path == NULL)
     {
-        rt_kprintf("用法: fs rm <path>\n");
+        rt_kprintf("用法: fs mkdir <path>\n");
         return;
     }
     if (fs_path(path, p) != 0)
@@ -511,7 +514,50 @@ static void fs_do_rm(const char *path)
         return;
     }
 
-    fr = f_unlink(p);
+    fr = f_mkdir(p);
+    if (fr != FR_OK)
+    {
+        rt_kprintf("建目录失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
+        return;
+    }
+    rt_kprintf("已创建目录 %s\n", p);
+}
+
+static void fs_do_rm(const char *path, int recursive)
+{
+    FRESULT fr;
+    char p[FS_PATH_MAX];
+    FILINFO fno;
+
+    if (path == NULL)
+    {
+        rt_kprintf("用法: fs rm [-r] <path>\n");
+        return;
+    }
+    if (fs_path(path, p) != 0)
+    {
+        rt_kprintf("路径太长\n");
+        return;
+    }
+
+    if (recursive != 0)
+    {
+        /* 文件 / 目录通吃：文件直接删，目录先清空再删（fs_util.c） */
+        fr = fs_remove_tree(p, s_io, sizeof(s_io));
+    }
+    else
+    {
+        fr = f_unlink(p);
+
+        /* f_unlink 对「非空目录」和「只读」都回 FR_DENIED，这里区分一下 */
+        if ((fr == FR_DENIED) && (f_stat(p, &fno) == FR_OK) &&
+            ((fno.fattrib & AM_DIR) != 0u))
+        {
+            rt_kprintf("%s 是非空目录，用 fs rm -r %s\n", p, p);
+            return;
+        }
+    }
+
     if (fr != FR_OK)
     {
         rt_kprintf("删除失败: %s (FRESULT=%d)\n", fr_str(fr), (int)fr);
@@ -613,9 +659,21 @@ static int fs(int argc, char **argv)
     {
         fs_do_write((argc > 2) ? argv[2] : NULL, argc - 3, &argv[3]);
     }
+    else if (strcmp(sub, "mkdir") == 0)
+    {
+        fs_do_mkdir((argc > 2) ? argv[2] : NULL);
+    }
     else if (strcmp(sub, "rm") == 0)
     {
-        fs_do_rm((argc > 2) ? argv[2] : NULL);
+        const char *p = (argc > 2) ? argv[2] : NULL;
+        int recursive = 0;
+
+        if ((p != NULL) && (strcmp(p, "-r") == 0))
+        {
+            recursive = 1;
+            p = (argc > 3) ? argv[3] : NULL;
+        }
+        fs_do_rm(p, recursive);
     }
     else if (strcmp(sub, "df") == 0)
     {
@@ -632,4 +690,4 @@ static int fs(int argc, char **argv)
     }
     return 0;
 }
-MSH_CMD_EXPORT(fs, fs <dev|part|mount|mkfs|ls|cat|write|rm|df>: 文件系统);
+MSH_CMD_EXPORT(fs, fs <dev|part|mount|mkfs|ls|cat|write|mkdir|rm|df>: 文件系统);
