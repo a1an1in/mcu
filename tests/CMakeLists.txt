@@ -9,6 +9,7 @@
 #   flash/ — drivers/flash：25Q128 的页切分 / 擦除 / 读-改-写
 #   sd/    — drivers/sd：CSD/CID 解析（容量、厂商、生产日期）
 #   fs/    — drivers/block + modules/fs：块设备注册表、FatFs 格式化/读写/重挂载
+#   recorder/ — modules/recorder：WAV 头生成与回填
 #
 # 用法：
 #   python3 tools/devops.py build --host   # 编译固件 + 编译 host 单测（只编译）
@@ -32,3 +33,4 @@ add_subdirectory(spi)
 add_subdirectory(flash)
 add_subdirectory(sd)
 add_subdirectory(fs)
+add_subdirectory(recorder)

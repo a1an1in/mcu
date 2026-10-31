@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "music.h"
+#include "recorder.h"
 
 static const char *music_err_str(int ret)
 {
@@ -75,6 +76,11 @@ static int music(int argc, char **argv)
     {
         int ret;
 
+        if (recorder_is_recording() != 0)
+        {
+            rt_kprintf("正在录音，先 record stop 再播放\n");
+            return 0;
+        }
         if (argc < 3)
         {
             rt_kprintf("用法: music play <path>\n");
@@ -139,7 +145,14 @@ static int music(int argc, char **argv)
 
     if (strcmp(sub, "test") == 0)
     {
-        int ret = music_test();
+        int ret;
+
+        if (recorder_is_recording() != 0)
+        {
+            rt_kprintf("正在录音，先 record stop 再做正弦测试\n");
+            return 0;
+        }
+        ret = music_test();
 
         if (ret == MUSIC_OK)
         {

@@ -61,6 +61,9 @@ struct vs1053;      /* 前向声明：默认实例接口在结构体定义之前
 #define VS1053_REG_AIADDR       0x0Au
 #define VS1053_REG_VOL          0x0Bu
 #define VS1053_REG_AICTRL0      0x0Cu
+#define VS1053_REG_AICTRL1      0x0Du
+#define VS1053_REG_AICTRL2      0x0Eu
+#define VS1053_REG_AICTRL3      0x0Fu
 
 /* MODE 位 */
 #define VS1053_SM_RESET         0x0004u
@@ -68,6 +71,7 @@ struct vs1053;      /* 前向声明：默认实例接口在结构体定义之前
 #define VS1053_SM_TESTS         0x0020u
 #define VS1053_SM_LINE_IN       0x0000u
 #define VS1053_SM_SDINEW        0x0800u
+#define VS1053_SM_ADPCM         0x1000u     /* 录音模式（0x1804 = RESET|SDINEW|ADPCM） */
 
 /* 默认实例（board 里 bind 一次，msh / module 直接取） */
 void vs1053_set_default(struct vs1053 *dev);
@@ -79,6 +83,7 @@ struct vs1053
     struct spi_device data;     /* 数据口：CS = XDCS */
     uint8_t ready;              /* init 成功过 */
     uint8_t started;            /* 已经送过音频数据（决定要不要 cancel） */
+    uint8_t recording;          /* 正在录音（SCI_MODE 已切到 ADPCM/PCM 模式） */
     uint8_t volume;             /* 0~100，用户音量 */
 };
 
@@ -117,6 +122,21 @@ int vs1053_cancel(struct vs1053 *dev);
 uint16_t vs1053_decode_time(struct vs1053 *dev);
 void vs1053_reset_decode_time(struct vs1053 *dev);
 uint16_t vs1053_bitrate(struct vs1053 *dev);
+
+/* ============================ 录音 ============================
+ * 线性 PCM（16 位、单声道），采样率一般 8000。
+ * gain: 0 = 自动 AGC；1~15 → 1024*gain（1024 = 1 倍）。
+ * 录音期间输出被关闭；停止后会重新做一次完整初始化，恢复播放配置。
+ */
+int vs1053_record_start(struct vs1053 *dev, uint32_t sample_rate, uint16_t gain);
+int vs1053_record_stop(struct vs1053 *dev);
+
+/* 从录音 FIFO 读 len 字节（len 必须为偶数）。
+ * 内部等 HDAT1 至少有 len/2 个 16 位字，超时返回 VS1053_ERR_TIMEOUT。 */
+int vs1053_record_read(struct vs1053 *dev, void *buf, uint16_t len);
+
+/* 录音 FIFO 里当前可读的 16 位字数（调试/状态用）。 */
+int vs1053_record_level(struct vs1053 *dev);
 
 /* 正弦测试（喇叭“嘀——”两声），用于确认硬件通路。会重置换芯片。 */
 int vs1053_sine_test(struct vs1053 *dev);

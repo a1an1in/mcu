@@ -472,6 +472,197 @@ uint16_t vs1053_bitrate(struct vs1053 *dev)
     }
 }
 
+/* ============================ 录音 ============================ */
+
+/* VS1053 的 WAV 录音有 bug，这颗 patch 修正它（正点原子第 55 章原样搬过来）。
+ * 格式是 [寄存器, 个数, 数据...]，个数最高位 = 1 表示 RLE。 */
+static const uint16_t s_wav_plugin[40] =
+{
+    0x0007, 0x0001, 0x8010, 0x0006, 0x001c, 0x3e12, 0xb817, 0x3e14,
+    0xf812, 0x3e01, 0xb811, 0x0007, 0x9717, 0x0020, 0xffd2, 0x0030,
+    0x11d1, 0x3111, 0x8024, 0x3704, 0xc024, 0x3b81, 0x8024, 0x3101,
+    0x8024, 0x3b81, 0x8024, 0x3f04, 0xc024, 0x2808, 0x4800, 0x36f1,
+    0x9811, 0x0007, 0x0001, 0x8028, 0x0006, 0x0002, 0x2a00, 0x040e,
+};
+
+static void vs1053_load_patch(struct vs1053 *dev, const uint16_t *patch, uint16_t len)
+{
+    uint16_t i = 0;
+    uint16_t addr;
+    uint16_t n;
+    uint16_t val;
+
+    while ((i + 1u) < len)
+    {
+        addr = patch[i++];
+        n = patch[i++];
+
+        if ((n & 0x8000u) != 0u)          /* RLE：同一个值重复 n 次 */
+        {
+            n &= 0x7FFFu;
+            if (i >= len)
+            {
+                break;
+            }
+            val = patch[i++];
+            while (n-- != 0u)
+            {
+                (void)vs1053_write_reg(dev, (uint8_t)addr, val);
+            }
+        }
+        else                              /* 连续 n 个值 */
+        {
+            while (n-- != 0u)
+            {
+                if (i >= len)
+                {
+                    return;
+                }
+                val = patch[i++];
+                (void)vs1053_write_reg(dev, (uint8_t)addr, val);
+            }
+        }
+    }
+}
+
+int vs1053_record_start(struct vs1053 *dev, uint32_t sample_rate, uint16_t gain)
+{
+    int ret;
+
+    if ((dev == NULL) || (dev->cmd.ctlr == NULL))
+    {
+        return VS1053_ERR_NODEV;
+    }
+    if (dev->ready == 0u)
+    {
+        ret = vs1053_init(dev);
+        if (ret != VS1053_OK)
+        {
+            return ret;
+        }
+    }
+    if (dev->started != 0u)
+    {
+        (void)vs1053_cancel(dev);         /* 正在放歌：先停干净 */
+    }
+
+    (void)vs1053_set_speaker(dev, 0);     /* 录音时关掉功放，避免啸叫 */
+
+    /* 线性 PCM、MIC 输入、左声道单声道（与第 55 章一致） */
+    ret = vs1053_write_reg(dev, VS1053_REG_BASS, 0x0000u);
+    if (ret == VS1053_OK) ret = vs1053_write_reg(dev, VS1053_REG_AICTRL0, (uint16_t)sample_rate);
+    if (ret == VS1053_OK) ret = vs1053_write_reg(dev, VS1053_REG_AICTRL1, gain);
+    if (ret == VS1053_OK) ret = vs1053_write_reg(dev, VS1053_REG_AICTRL2, 0x0000u);
+    if (ret == VS1053_OK) ret = vs1053_write_reg(dev, VS1053_REG_AICTRL3, 6u);
+    if (ret == VS1053_OK) ret = vs1053_write_reg(dev, VS1053_REG_CLOCKF, 0x2000u);
+    if (ret == VS1053_OK)
+    {
+        /* SM_ADPCM=1：进入录音；SM_RESET 必须一起写 */
+        ret = vs1053_write_reg(dev, VS1053_REG_MODE,
+                               VS1053_SM_RESET | VS1053_SM_SDINEW | VS1053_SM_ADPCM);
+    }
+    if (ret != VS1053_OK)
+    {
+        return ret;
+    }
+
+    osal_thread_sleep_ms(5);              /* 至少 1.35ms */
+    vs1053_load_patch(dev, s_wav_plugin, (uint16_t)(sizeof(s_wav_plugin) / sizeof(s_wav_plugin[0])));
+
+    dev->recording = 1u;
+    dev->started = 0u;
+    return VS1053_OK;
+}
+
+int vs1053_record_stop(struct vs1053 *dev)
+{
+    if (dev == NULL)
+    {
+        return VS1053_ERR_PARAM;
+    }
+    if (dev->recording == 0u)
+    {
+        return VS1053_OK;
+    }
+
+    /* 退出录音：写回普通模式并软复位；随后重新 init 恢复播放侧的时钟/音量 */
+    (void)vs1053_write_reg(dev, VS1053_REG_MODE,
+                           VS1053_SM_RESET | VS1053_SM_SDINEW);
+    osal_thread_sleep_ms(5);
+
+    dev->recording = 0u;
+    dev->started = 0u;
+    dev->ready = 0u;
+    return vs1053_init(dev);
+}
+
+int vs1053_record_read(struct vs1053 *dev, void *buf, uint16_t len)
+{
+    uint8_t *p = (uint8_t *)buf;
+    uint16_t words;
+    uint16_t i;
+    uint16_t w;
+    uint32_t waited = 0;
+    int level;
+
+    if ((dev == NULL) || (buf == NULL) || (len == 0u) || ((len & 1u) != 0u))
+    {
+        return VS1053_ERR_PARAM;
+    }
+    if (dev->recording == 0u)
+    {
+        return VS1053_ERR_NODEV;
+    }
+
+    words = (uint16_t)(len / 2u);
+
+    for (;;)
+    {
+        level = vs1053_record_level(dev);
+        if (level < 0)
+        {
+            return VS1053_ERR_IO;
+        }
+        if ((uint16_t)level >= words)
+        {
+            break;
+        }
+        if (waited >= VS1053_DREQ_TIMEOUT_MS)
+        {
+            return VS1053_ERR_TIMEOUT;
+        }
+        osal_thread_sleep_ms(1);
+        waited++;
+    }
+
+    /* HDAT0 是 16 位 FIFO：低字节先出，WAV 的 PCM 是小端 */
+    for (i = 0; i < words; i++)
+    {
+        if (vs1053_read_reg(dev, VS1053_REG_HDAT0, &w) != VS1053_OK)
+        {
+            return VS1053_ERR_IO;
+        }
+        p[(2u * i)] = (uint8_t)(w & 0xFFu);
+        p[(2u * i) + 1u] = (uint8_t)(w >> 8);
+    }
+    return VS1053_OK;
+}
+
+int vs1053_record_level(struct vs1053 *dev)
+{
+    uint16_t v = 0;
+
+    if ((dev == NULL) || (dev->recording == 0u))
+    {
+        return -1;
+    }
+    if (vs1053_read_reg(dev, VS1053_REG_HDAT1, &v) != VS1053_OK)
+    {
+        return -1;
+    }
+    return (int)v;
+}
+
 /* ============================ 正弦测试 ============================ */
 
 static int vs1053_sine_enter(struct vs1053 *dev, uint8_t n)

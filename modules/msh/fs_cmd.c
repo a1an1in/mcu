@@ -30,6 +30,7 @@
 #include "ff.h"
 #include "fs_util.h"
 #include "music.h"
+#include "recorder.h"
 
 #define FS_DRIVE            "0:"
 #define FS_WORK_SIZE        4096        /* f_mkfs 的工作缓冲，4KB 足够 */
@@ -216,9 +217,9 @@ static void fs_do_mount(const char *arg)
         pt = (int)disk_get_partition(0);    /* 没给就沿用上次的选择 */
     }
 
-    if (music_is_playing() != 0)
+    if ((music_is_playing() != 0) || (recorder_is_recording() != 0))
     {
-        rt_kprintf("正在播放音乐，先 music stop 再重新挂载\n");
+        rt_kprintf("正在播放/录音，先 music stop / record stop 再重新挂载\n");
         return;
     }
 
@@ -273,9 +274,9 @@ static void fs_do_umount(void)
         rt_kprintf("本来就没挂载\n");
         return;
     }
-    if (music_is_playing() != 0)
+    if ((music_is_playing() != 0) || (recorder_is_recording() != 0))
     {
-        rt_kprintf("正在播放音乐，先 music stop 再卸载\n");
+        rt_kprintf("正在播放/录音，先 music stop / record stop 再卸载\n");
         return;
     }
     (void)f_mount(NULL, FS_DRIVE, 0);
@@ -300,9 +301,9 @@ static void fs_do_mkfs(const char *arg)
         pt = 0;                             /* 默认：重写整盘分区表 */
     }
 
-    if (music_is_playing() != 0)
+    if ((music_is_playing() != 0) || (recorder_is_recording() != 0))
     {
-        rt_kprintf("正在播放音乐，先 music stop 再格式化\n");
+        rt_kprintf("正在播放/录音，先 music stop / record stop 再格式化\n");
         return;
     }
 

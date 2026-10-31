@@ -14,6 +14,8 @@ add_library(modules OBJECT
     fs/fs_util.c
     fs/fatfs/ff.c
     music/music.c
+    recorder/recorder.c
+    recorder/wav.c
 )
 
 # FatFs 是第三方源码（R0.14b），不参与本工程的 -Wall 洁癖。
@@ -35,6 +37,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/sd_cmd.c
         msh/fs_cmd.c
         msh/music_cmd.c
+        msh/record_cmd.c
         msh/test_cmd.c
     )
 endif()
@@ -53,6 +56,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/fs
     ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
     ${CMAKE_SOURCE_DIR}/modules/music
+    ${CMAKE_SOURCE_DIR}/modules/recorder
     ${CMAKE_SOURCE_DIR}/drivers/audio
 )
 
