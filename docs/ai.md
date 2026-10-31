@@ -138,3 +138,8 @@ Connection: close
 | `[bridge] API HTTP 400 ... model` | `LLM_MODEL` 写错，换成服务商支持的 ID |
 | 回答是乱码 | 串口终端要是 UTF-8；bridge 与板子都按 UTF-8 传 |
 | `问题太长` | 缩短到约 80 个汉字以内，或改大 `FINSH_CMD_SIZE` |
+
+## 8. 语音对话
+
+文本 `ai` 之外，还支持**按住 KEY0 说话**的语音对话（流式录音 → ASR →
+大模型 → TTS → 边下边播），见 `docs/voice.md`。

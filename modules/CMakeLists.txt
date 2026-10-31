@@ -18,6 +18,7 @@ add_library(modules OBJECT
     recorder/wav.c
     ai/ai.c
     ai/http_post.c
+    voice/voice.c
 )
 
 # FatFs 是第三方源码（R0.14b），不参与本工程的 -Wall 洁癖。
@@ -41,6 +42,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/music_cmd.c
         msh/record_cmd.c
         msh/ai_cmd.c
+        msh/voice_cmd.c
         msh/test_cmd.c
     )
 endif()
@@ -61,6 +63,8 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/music
     ${CMAKE_SOURCE_DIR}/modules/recorder
     ${CMAKE_SOURCE_DIR}/modules/ai
+    ${CMAKE_SOURCE_DIR}/modules/voice
+    ${CMAKE_SOURCE_DIR}/modules/key
     ${CMAKE_SOURCE_DIR}/drivers/audio
 )
 

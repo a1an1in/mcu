@@ -2,50 +2,67 @@
 # -*- coding: utf-8 -*-
 """llm_bridge.py - 让 STM32 板子通过局域网和 DeepSeek（或兼容 API）对话。
 
-板子只发明文 HTTP 到这个脚本：
+文本：
+    POST /ask      body = 问题（UTF-8 纯文本） → 回答（text/plain）
 
-    POST /ask
-    Content-Type: text/plain
-    body = 用户问题（UTF-8）
-
-脚本用你的 API Key 转发到 https://api.deepseek.com/chat/completions，
-把 JSON 里的 choices[0].message.content 取出来，原样（纯文本）返回给板子。
+语音（流式，板子边录边传）：
+    POST /voice    body = 8kHz/16bit/单声道 PCM（裸数据，无 WAV 头）
+                   板子发完 PCM 后半关闭连接（shutdown TX），脚本读到 EOF 后：
+                   faster-whisper 识别 → DeepSeek 回答 → Windows SAPI 合成
+                   → 返回 audio/wav（整段，板子边收边喂 VS1053）
 
 为什么不在板子上直接 HTTPS：
     DeepSeek 只提供 HTTPS；STM32F103 + 64KB RAM 跑 mbedTLS 要几十 KB RAM
-    和上百 KB Flash，还要处理证书与时间，性价比很低。API Key 也就不用
-    烧进固件。
+    和上百 KB Flash，还要证书/时间，性价比低。API Key 也就不落板子。
 
 用法（PC 上）：
-    set DEEPSEEK_API_KEY=sk-xxxx            # PowerShell: $env:DEEPSEEK_API_KEY="sk-xxxx"
-    set LLM_MODEL=deepseek-chat             # 或你的服务商支持的模型 ID
+    tools/llm_bridge.local.json 里填 api_key（已 gitignore），或设环境变量：
+    DEEPSEEK_API_KEY / LLM_MODEL / LLM_BASE_URL
+
+    然后：
     python tools/llm_bridge.py
 
-    然后板子上：
-    msh > ai server 192.168.1.100 8765      # 换成 PC 的局域网 IP
-    msh > ai ask 你好，介绍一下你自己
-
-依赖：Python 3.8+，只用标准库。
+依赖：Python 3.8+；语音需要
+    pip install faster-whisper
+    （TTS 用 Windows 自带 SAPI，不需要装包）
 """
 
 import argparse
 import json
 import os
 import socket
+import subprocess
 import sys
+import tempfile
+import threading
 import time
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib import error, request
+
+# 中国网络访问 HuggingFace 经常超时；默认走镜像，并禁用 Xet（镜像不支持 CAS）。
+# 已有环境变量时以用户设置为准。
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 DEFAULT_SYSTEM = (
     "你是嵌入式开发助手。回答用中文，尽量简短（不超过 200 字）；"
     "必要时给出 C 代码片段，不要长篇大论。"
 )
+DEFAULT_VOICE_SYSTEM = (
+    "你在和用户语音对话。只用一句口语回答，最多 40 个字；"
+    "不要 Markdown、不要代码、不要列表，适合直接朗读。"
+)
 
 # 可选：tools/llm_bridge.local.json（已在 .gitignore 里），用来“写死” Key，
 # 这样每次启动不用配环境变量。优先级：命令行 > 环境变量 > 本地文件 > 默认值。
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "llm_bridge.local.json")
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(TOOLS_DIR, "llm_bridge.local.json")
+TTS_SCRIPT = os.path.join(TOOLS_DIR, "tts_sapi.ps1")
+
+VOICE_RATE = 8000
+VOICE_MAX_SECONDS = 30
+VOICE_MAX_PCM = VOICE_RATE * 2 * VOICE_MAX_SECONDS
 
 
 def load_local_config():
@@ -69,16 +86,16 @@ class Bridge:
         self.max_tokens = max_tokens
         self.timeout = timeout
 
-    def ask(self, text):
+    def ask(self, text, system=None, max_tokens=None):
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self.system},
+                {"role": "system", "content": system or self.system},
                 {"role": "user", "content": text},
             ],
             "stream": False,
             "temperature": 0.7,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens or self.max_tokens,
         }
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(
@@ -105,25 +122,112 @@ class Bridge:
             return "[bridge] 无法解析 API 响应: " + json.dumps(data, ensure_ascii=False)[:300]
 
 
-def make_handler(bridge):
+class VoiceEngine:
+    """PCM → ASR → LLM → TTS(WAV)。模型只加载一次，串行处理。"""
+
+    def __init__(self, bridge, asr_model, asr_language, tts_voice, tts_rate,
+                 voice_max_tokens):
+        self.bridge = bridge
+        self.asr_model_name = asr_model
+        self.asr_language = asr_language
+        self.tts_voice = tts_voice
+        self.tts_rate = tts_rate
+        self.voice_max_tokens = voice_max_tokens
+        self._model = None
+        self._model_lock = threading.Lock()
+        self._run_lock = threading.Lock()
+
+    def preload(self):
+        with self._model_lock:
+            if self._model is None:
+                from faster_whisper import WhisperModel  # 延迟导入
+                self._model = WhisperModel(self.asr_model_name, device="cpu",
+                                           compute_type="int8")
+        return self._model
+
+    def transcribe(self, pcm):
+        model = self.preload()
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            with wave.open(path, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(VOICE_RATE)
+                w.writeframes(pcm)
+            segments, _info = model.transcribe(path, language=self.asr_language,
+                                               vad_filter=True, beam_size=1)
+            return "".join(s.text for s in segments).strip()
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    def synthesize(self, text):
+        fd, txt = tempfile.mkstemp(suffix=".txt")
+        os.close(fd)
+        fd, wav = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            with open(txt, "w", encoding="utf-8") as f:
+                f.write(text)
+            cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                   "-File", TTS_SCRIPT, "-TextFile", txt, "-OutFile", wav,
+                   "-Rate", str(self.tts_rate)]
+            if self.tts_voice:
+                cmd += ["-Voice", self.tts_voice]
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=30)
+            if r.returncode != 0:
+                raise RuntimeError("SAPI TTS 失败: %s" % (r.stderr or r.stdout).strip())
+            with open(wav, "rb") as f:
+                return f.read()
+        finally:
+            for p in (txt, wav):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+    def handle(self, pcm):
+        with self._run_lock:
+            t0 = time.time()
+            heard = self.transcribe(pcm)
+            t1 = time.time()
+            if heard:
+                answer = self.bridge.ask(heard, system=DEFAULT_VOICE_SYSTEM,
+                                         max_tokens=self.voice_max_tokens)
+            else:
+                answer = "我没听清，请再说一遍。"
+            t2 = time.time()
+            # 太长的回答朗读会很久，截断到 120 字
+            speak = answer[:120]
+            wav = self.synthesize(speak)
+            t3 = time.time()
+            print("[voice] asr %.1fs llm %.1fs tts %.1fs | %r -> %r"
+                  % (t1 - t0, t2 - t1, t3 - t2, heard, answer))
+            return wav, heard, answer
+
+
+def make_handler(bridge, voice):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def log_message(self, fmt, *args):
-            # 默认日志太吵；真正的请求日志在 do_POST 里打
             pass
 
-        def _send(self, code, body):
+        def _send(self, code, body, ctype="text/plain; charset=utf-8"):
             if isinstance(body, str):
                 body = body.encode("utf-8")
             self.send_response(code)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Connection", "close")
             self.end_headers()
             try:
                 self.wfile.write(body)
-            except BrokenPipeError:
+            except (BrokenPipeError, ConnectionResetError):
                 pass
 
         def do_GET(self):
@@ -133,10 +237,14 @@ def make_handler(bridge):
                 self._send(404, "not found")
 
         def do_POST(self):
-            if self.path != "/ask":
+            if self.path == "/ask":
+                self._do_ask()
+            elif self.path == "/voice":
+                self._do_voice()
+            else:
                 self._send(404, "not found")
-                return
 
+        def _do_ask(self):
             try:
                 n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -151,12 +259,38 @@ def make_handler(bridge):
             t0 = time.time()
             try:
                 answer = bridge.ask(text)
-            except Exception as e:  # noqa: BLE001 - 把错误原文回给板子
+            except Exception as e:  # noqa: BLE001
                 answer = "[bridge] 请求失败: %s" % e
-            dt = time.time() - t0
-            print("[ans] %.1fs, %d chars" % (dt, len(answer)))
-
+            print("[ans] %.1fs, %d chars" % (time.time() - t0, len(answer)))
             self._send(200, answer)
+
+        def _do_voice(self):
+            if voice is None:
+                self._send(501, "[bridge] 语音未启用（faster-whisper 未安装或模型加载失败）")
+                return
+
+            # 板子用 HTTP/1.0、不带 Content-Length：发完 PCM 后半关闭，读到 EOF 为止
+            raw = self.rfile.read()
+            if len(raw) > VOICE_MAX_PCM:
+                raw = raw[:VOICE_MAX_PCM]
+            if len(raw) < VOICE_RATE // 2:      # < 0.25 秒
+                raw = b""                        # 让 ASR 返回空，走“没听清”
+
+            t0 = time.time()
+            try:
+                wav, heard, answer = voice.handle(raw)
+                print("[voice] total %.1fs" % (time.time() - t0))
+                self._send(200, wav, ctype="audio/wav")
+                return
+            except Exception as e:  # noqa: BLE001
+                print("[voice] 失败: %s" % e)
+
+            # 失败也要尽量“说出来”，说不出来就回文本
+            msg = "出错了：%s" % e
+            try:
+                self._send(200, voice.synthesize(msg[:120]), ctype="audio/wav")
+            except Exception:  # noqa: BLE001
+                self._send(500, msg)
 
     return Handler
 
@@ -197,6 +331,13 @@ def main():
                     default=int(os.environ.get("LLM_MAX_TOKENS") or cfg.get("max_tokens", 800)))
     ap.add_argument("--timeout", type=int,
                     default=int(os.environ.get("LLM_TIMEOUT") or cfg.get("timeout", 60)))
+    ap.add_argument("--asr-model", default=os.environ.get("ASR_MODEL") or cfg.get("asr_model", "base"))
+    ap.add_argument("--asr-language", default=os.environ.get("ASR_LANGUAGE") or cfg.get("asr_language", "zh"))
+    ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
+    ap.add_argument("--tts-rate", type=int, default=int(os.environ.get("TTS_RATE") or cfg.get("tts_rate", 2)))
+    ap.add_argument("--voice-max-tokens", type=int,
+                    default=int(os.environ.get("VOICE_MAX_TOKENS") or cfg.get("voice_max_tokens", 80)))
+    ap.add_argument("--no-voice", action="store_true")
     args = ap.parse_args()
 
     if not args.api_key:
@@ -213,8 +354,21 @@ def main():
     bridge = Bridge(args.base_url, args.model, args.api_key,
                     args.system, args.max_tokens, args.timeout)
 
+    voice = None
+    if not args.no_voice:
+        voice = VoiceEngine(bridge, args.asr_model, args.asr_language,
+                            args.tts_voice, args.tts_rate, args.voice_max_tokens)
+        print("[voice] 预加载 ASR 模型 %s（首次会下载，请稍等）..." % args.asr_model)
+        try:
+            voice.preload()
+            print("[voice] ASR 就绪")
+        except Exception as e:  # noqa: BLE001
+            print("[voice] ASR 不可用: %s" % e)
+            print("[voice] 先运行: pip install faster-whisper")
+            voice = None
+
     try:
-        httpd = ThreadingHTTPServer((args.host, args.port), make_handler(bridge))
+        httpd = ThreadingHTTPServer((args.host, args.port), make_handler(bridge, voice))
     except OSError as e:
         print("[bridge] 监听 %s:%d 失败: %s" % (args.host, args.port, e))
         return 1
@@ -224,6 +378,8 @@ def main():
     print("[bridge] listening on %s:%d" % (args.host, args.port))
     print("[bridge] model=%s  base=%s  max_tokens=%d" % (args.model, args.base_url, args.max_tokens))
     print("[bridge] API Key: %s..." % args.api_key[:6])
+    print("[bridge] voice=%s  asr=%s  tts=SAPI(%s)"
+          % ("on" if voice else "off", args.asr_model, args.tts_voice or "auto zh"))
     for ip in local_ips():
         print("[bridge] board command: ai server %s %d" % (ip, args.port))
     print("[bridge] Ctrl+C 停止")
