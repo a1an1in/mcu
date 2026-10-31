@@ -120,49 +120,6 @@ int uart_getchar(void)
     return c;
 }
 
-int uart_inject_rx(const void *buf, unsigned int len)
-{
-    const unsigned char *p = (const unsigned char *)buf;
-    unsigned int i = 0;
-    rt_base_t level;
-
-    if ((p == NULL) || (len == 0u))
-    {
-        return 0;
-    }
-
-    /* 与接收中断共用 head/tail，必须关中断改 */
-    level = rt_hw_interrupt_disable();
-    while (i < len)
-    {
-        int next = (rx_head + 1) % RX_BUF_SIZE;
-
-        if (next == rx_tail)
-        {
-            break;                      /* 缓冲满：丢弃剩余字节 */
-        }
-        rx_ring[rx_head] = p[i++];
-        rx_head = next;
-    }
-    rt_hw_interrupt_enable(level);
-
-    if (i != 0u)
-    {
-#ifdef RT_USING_DEVICE
-        if (s_uart1_dev.rx_indicate != RT_NULL)
-        {
-            s_uart1_dev.rx_indicate(&s_uart1_dev, i);
-        }
-#endif
-        if (rx_sem != RT_NULL)
-        {
-            rt_sem_release(rx_sem);
-        }
-    }
-
-    return (int)i;
-}
-
 void USART1_IRQHandler(void)
 {
     unsigned long sr;
