@@ -34,4 +34,4 @@
 ## 相关：自测改为命令
 
 原来「按一下 WK_UP 跑一次存储 / FLASH 自测」已经改成 msh 命令，
-见 `selftest`（`docs/selftest.md`）。
+见 `test`（`docs/test.md`）。

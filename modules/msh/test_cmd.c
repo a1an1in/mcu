@@ -1,11 +1,11 @@
 /*
- * selftest_cmd.c - 存储 / NOR FLASH 自测的 msh 命令 <modules/msh/>
+ * test_cmd.c - 存储 / NOR FLASH 自测的 msh 命令 <modules/msh/>
  *
  * 原来由 main() 里「按一下 WK_UP」触发，现在改成命令，随时可跑：
  *
- *   selftest            存储 + FLASH 都测
- *   selftest storage    只测 EEPROM（key-value 落盘/读回）
- *   selftest flash      只测 25Q128（找空扇区 → 擦/跨页写/读回 → 擦回空）
+ *   test            存储 + FLASH 都测
+ *   test storage    只测 EEPROM（key-value 落盘/读回）
+ *   test flash      只测 25Q128（找空扇区 → 擦/跨页写/读回 → 擦回空）
  *
  * 两个测试都会真的写片子（EEPROM 一次、FLASH 2 次扇区擦除），所以不自动跑。
  * 代码从 applications/main.c 搬来，判断逻辑没变，只是入口变成 msh 命令。
@@ -300,7 +300,7 @@ fail:
 
 /* ============================ msh 入口 ============================ */
 
-static int selftest(int argc, char **argv)
+static int test(int argc, char **argv)
 {
     const char *what = (argc > 1) ? argv[1] : "all";
 
@@ -319,12 +319,12 @@ static int selftest(int argc, char **argv)
     if ((strcmp(what, "all") != 0) && (strcmp(what, "storage") != 0) &&
         (strcmp(what, "flash") != 0))
     {
-        rt_kprintf("用法: selftest [storage|flash]\n");
+        rt_kprintf("用法: test [storage|flash]\n");
         rt_kprintf("  省略参数 = 存储 + FLASH 都测\n");
         return 0;
     }
 
-    osal_printf("\n[selftest] 完成\n");
+    osal_printf("\n[test] 完成\n");
     return 0;
 }
-MSH_CMD_EXPORT(selftest, selftest [storage|flash]: 存储 / FLASH 自测);
+MSH_CMD_EXPORT(test, test [storage|flash]: 存储 / FLASH 自测);

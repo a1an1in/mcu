@@ -35,7 +35,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/sd_cmd.c
         msh/fs_cmd.c
         msh/music_cmd.c
-        msh/selftest_cmd.c
+        msh/test_cmd.c
     )
 endif()
 

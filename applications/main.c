@@ -244,7 +244,7 @@ int main(void)
      * （起独立线程，主线程继续跑下面的心跳） */
     hw_test_start();
 
-    /* 心跳：主线程不再做按键触发，存储 / FLASH 自测改由 msh 的 selftest 命令执行。 */
+    /* 心跳：主线程不再做按键触发，存储 / FLASH 自测改由 msh 的 test 命令执行。 */
     for (;;)
     {
         osal_thread_sleep_ms(3000u);
