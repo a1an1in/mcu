@@ -133,7 +133,7 @@ class VoiceEngine:
     def __init__(self, bridge, asr_model, asr_language, tts_voice, tts_rate,
                  voice_max_tokens, history_turns=6, idle_reset=600, max_chars=200,
                  tts_backend="edge", tts_edge_voice="zh-CN-XiaoxiaoNeural",
-                 tts_edge_rate="+5%"):
+                 tts_edge_rate="+5%", asr_vad=True, asr_beam_size=5):
         self.bridge = bridge
         self.asr_model_name = asr_model
         self.asr_language = asr_language
@@ -142,6 +142,8 @@ class VoiceEngine:
         self.tts_backend = tts_backend
         self.tts_edge_voice = tts_edge_voice
         self.tts_edge_rate = tts_edge_rate
+        self.asr_vad = bool(asr_vad)
+        self.asr_beam_size = max(1, int(asr_beam_size))
         self.voice_max_tokens = voice_max_tokens
         self.history_turns = max(0, int(history_turns))
         self.idle_reset = max(0, int(idle_reset))
@@ -184,6 +186,16 @@ class VoiceEngine:
 
     def transcribe(self, pcm):
         model = self.preload()
+        if pcm:
+            try:
+                import audioop
+                rms = audioop.rms(pcm, 2)
+                peak = audioop.max(pcm, 2)
+                print("[voice] pcm %d bytes (%.2fs) rms=%d peak=%d%s"
+                      % (len(pcm), len(pcm) / 16000.0, rms, peak,
+                         "  << 可能削波，调小 MIC 增益" if peak >= 30000 else ""))
+            except Exception:
+                print("[voice] pcm %d bytes" % len(pcm))
         fd, path = tempfile.mkstemp(suffix=".wav")
         os.close(fd)
         try:
@@ -193,7 +205,9 @@ class VoiceEngine:
                 w.setframerate(VOICE_RATE)
                 w.writeframes(pcm)
             segments, _info = model.transcribe(path, language=self.asr_language,
-                                               vad_filter=True, beam_size=1)
+                                               vad_filter=self.asr_vad,
+                                               beam_size=self.asr_beam_size,
+                                               condition_on_previous_text=False)
             return "".join(s.text for s in segments).strip()
         finally:
             try:
@@ -262,6 +276,7 @@ class VoiceEngine:
                     answer = "这个我暂时答不上来，你换个问法试试？"
             else:
                 answer = "我没听清，请再说一遍。"
+                print("[voice] 识别为空：如果麦克风有电平，试 ASR_VAD=0")
             t2 = time.time()
             # 太长的回答朗读会很久，按配置截断
             speak = answer[:self.max_chars]
@@ -411,6 +426,10 @@ def main():
                     default=int(os.environ.get("LLM_TIMEOUT") or cfg.get("timeout", 60)))
     ap.add_argument("--asr-model", default=os.environ.get("ASR_MODEL") or cfg.get("asr_model", "base"))
     ap.add_argument("--asr-language", default=os.environ.get("ASR_LANGUAGE") or cfg.get("asr_language", "zh"))
+    ap.add_argument("--asr-vad", type=int,
+                    default=int(os.environ.get("ASR_VAD") or cfg.get("asr_vad", 1)))
+    ap.add_argument("--asr-beam-size", type=int,
+                    default=int(os.environ.get("ASR_BEAM_SIZE") or cfg.get("asr_beam_size", 5)))
     ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
     ap.add_argument("--tts-rate", type=int, default=int(os.environ.get("TTS_RATE") or cfg.get("tts_rate", 2)))
     ap.add_argument("--tts-backend", choices=["edge", "sapi"],
@@ -455,7 +474,8 @@ def main():
                             args.tts_voice, args.tts_rate, args.voice_max_tokens,
                             args.voice_history_turns, args.voice_idle_reset,
                             args.voice_max_chars, args.tts_backend,
-                            args.tts_edge_voice, args.tts_edge_rate)
+                            args.tts_edge_voice, args.tts_edge_rate,
+                            args.asr_vad != 0, args.asr_beam_size)
         print("[voice] 预加载 ASR 模型 %s（首次会下载，请稍等）..." % args.asr_model)
         try:
             voice.preload()
@@ -481,9 +501,10 @@ def main():
     print("[bridge] voice=%s  asr=%s  tts=%s"
           % ("on" if voice else "off", args.asr_model, tts_desc))
     if voice:
-        print("[voice] history=%d 轮  idle_reset=%ds  max_chars=%d  max_tokens=%d"
+        print("[voice] history=%d 轮  idle_reset=%ds  max_chars=%d  max_tokens=%d  vad=%s  beam=%d"
               % (args.voice_history_turns, args.voice_idle_reset,
-                 args.voice_max_chars, args.voice_max_tokens))
+                 args.voice_max_chars, args.voice_max_tokens,
+                 "on" if args.asr_vad else "off", args.asr_beam_size))
     for ip in local_ips():
         print("[bridge] board command: chat server %s %d" % (ip, args.port))
     print("[bridge] Ctrl+C 停止")

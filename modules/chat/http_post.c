@@ -1,5 +1,5 @@
 /*
- * http_post.c - 极简 HTTP/1.1 POST 请求构造 <modules/ai/>
+ * http_post.c - 极简 HTTP/1.1 POST 请求构造 <modules/chat/>
  *
  * 不用 snprintf：本工程是 RT_USING_NANO，libc 里未必有；手工拼更可控。
  */

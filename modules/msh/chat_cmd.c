@@ -16,19 +16,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ai.h"
+#include "chat.h"
 #include "music.h"
-#include "voice.h"
 
-static const char *ai_err_str(int ret)
+static const char *chat_err_str(int ret)
 {
     switch (ret)
     {
-    case AI_OK:             return "OK";
-    case AI_ERR_PARAM:      return "参数非法（IP / 端口 / 问题为空）";
-    case AI_ERR_NOSERVER:   return "还没设置网关，先 chat server <PC_IP> [port]";
-    case AI_ERR_NET:        return "连不上 PC 网关（IP / 防火墙 / bridge 是否在跑？）";
-    case AI_ERR_TOOBIG:     return "问题太长，缩短一点再试";
+    case CHAT_OK:             return "OK";
+    case CHAT_ERR_PARAM:      return "参数非法（IP / 端口 / 问题为空）";
+    case CHAT_ERR_NOSERVER:   return "还没设置网关，先 chat server <PC_IP> [port]";
+    case CHAT_ERR_NET:        return "连不上 PC 网关（IP / 防火墙 / bridge 是否在跑？）";
+    case CHAT_ERR_TOOBIG:     return "问题太长，缩短一点再试";
     default:                return "未知错误";
     }
 }
@@ -50,14 +49,14 @@ static void chat_voice_status(void)
     char ip[24];
     uint16_t port = 0;
 
-    rt_kprintf("语音键: %s\n", voice_key_enabled() ? "on（按住 KEY0 说话）" : "off");
+    rt_kprintf("语音键: %s\n", chat_chat_voice_key_enabled() ? "on（按住 KEY0 说话）" : "off");
     rt_kprintf("状态: %s%s\n",
-               voice_is_busy() ? "处理中" : "空闲",
-               voice_is_recording() ? "（录音中）" : "");
+               chat_voice_is_busy() ? "处理中" : "空闲",
+               chat_voice_is_recording() ? "（录音中）" : "");
     rt_kprintf("音量: %d    MIC 增益: %d%s\n",
-               music_get_volume(), voice_get_gain(),
-               voice_get_gain() == 0 ? "（自动 AGC）" : " 倍");
-    if (ai_get_server(ip, sizeof(ip), &port) == AI_OK)
+               music_get_volume(), chat_voice_get_gain(),
+               chat_voice_get_gain() == 0 ? "（自动 AGC）" : " 倍");
+    if (chat_server_get(ip, sizeof(ip), &port) == CHAT_OK)
     {
         rt_kprintf("网关: %s:%u\n", ip, (unsigned)port);
     }
@@ -73,8 +72,8 @@ static void chat_voice(int argc, char **argv)
 
     if ((strcmp(action, "on") == 0) || (strcmp(action, "off") == 0))
     {
-        voice_key_enable(strcmp(action, "on") == 0);
-        rt_kprintf("KEY0 语音键: %s\n", voice_key_enabled() ? "on" : "off");
+        chat_voice_key_enable(strcmp(action, "on") == 0);
+        rt_kprintf("KEY0 语音键: %s\n", chat_chat_voice_key_enabled() ? "on" : "off");
         return;
     }
 
@@ -110,10 +109,10 @@ static void chat_voice(int argc, char **argv)
                 rt_kprintf("MIC 增益范围 0~15（0 = 自动 AGC）\n");
                 return;
             }
-            voice_set_gain(gain);
+            chat_voice_set_gain(gain);
         }
-        rt_kprintf("MIC 增益: %d%s\n", voice_get_gain(),
-                   voice_get_gain() == 0 ? "（自动 AGC）" : " 倍");
+        rt_kprintf("MIC 增益: %d%s\n", chat_voice_get_gain(),
+                   chat_voice_get_gain() == 0 ? "（自动 AGC）" : " 倍");
         return;
     }
 
@@ -161,10 +160,10 @@ static void chat_text(int argc, char **argv)
     }
 
     rt_kprintf("正在请求大模型...（最长等 20 秒）\n");
-    ret = ai_ask(text);
-    if (ret != AI_OK)
+    ret = chat_text_ask(text);
+    if (ret != CHAT_OK)
     {
-        rt_kprintf("请求失败: %s\n", ai_err_str(ret));
+        rt_kprintf("请求失败: %s\n", chat_err_str(ret));
     }
     else
     {
@@ -205,15 +204,15 @@ static int chat(int argc, char **argv)
             port = (uint16_t)p;
         }
 
-        ret = ai_set_server(argv[2], port);
-        if (ret == AI_OK)
+        ret = chat_server_set(argv[2], port);
+        if (ret == CHAT_OK)
         {
             rt_kprintf("网关: %s:%u\n", argv[2], (unsigned)port);
             rt_kprintf("  确认 PC 上已运行: python tools/llm_bridge.py\n");
         }
         else
         {
-            rt_kprintf("设置失败: %s\n", ai_err_str(ret));
+            rt_kprintf("设置失败: %s\n", chat_err_str(ret));
         }
         return 0;
     }
@@ -252,7 +251,7 @@ MSH_CMD_EXPORT(chat, chat <text|voice|server|info>: 文本 / 语音对话);
 /* 系统初始化（main 之前、调度器已运行）自动启动语音按键线程 */
 static int chat_voice_autostart(void)
 {
-    (void)voice_service_start();
+    (void)chat_voice_service_start();
     return 0;
 }
 INIT_APP_EXPORT(chat_voice_autostart);
