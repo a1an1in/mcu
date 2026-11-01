@@ -38,6 +38,32 @@ static volatile uint8_t s_busy;
 static volatile uint8_t s_recording;
 static uint16_t s_gain_reg = VOICE_GAIN_DEFAULT;
 static uint8_t s_pcm[VOICE_BUF_SIZE] __attribute__((aligned(4)));
+/* 网关在音频前附带的一小段对话文字（你: ... / AI: ...），上限 1KB */
+static char s_text[1024];
+static size_t s_text_len;
+
+/* 从响应头里取一个十进制整数（找不到返回 0） */
+static uint32_t voice_header_u32(const char *hdr, const char *name)
+{
+    const char *p = strstr(hdr, name);
+    uint32_t v = 0u;
+
+    if (p == NULL)
+    {
+        return 0u;
+    }
+    p += strlen(name);
+    while ((*p == ' ') || (*p == '\t'))
+    {
+        p++;
+    }
+    while ((*p >= '0') && (*p <= '9'))
+    {
+        v = (v * 10u) + (uint32_t)(*p - '0');
+        p++;
+    }
+    return v;
+}
 
 /* ============================ HTTP 头 ============================ */
 
@@ -64,7 +90,8 @@ static int voice_build_header(char *buf, size_t size, const char *ip, uint16_t p
     strcat(buf, ":");
     strcat(buf, portstr);
     strcat(buf, "\r\nContent-Type: application/octet-stream\r\n");
-    strcat(buf, "X-Sample-Rate: 8000\r\nX-Channels: 1\r\nX-Bits: 16\r\n\r\n");
+    strcat(buf, "X-Sample-Rate: 8000\r\nX-Channels: 1\r\nX-Bits: 16\r\n");
+    strcat(buf, "X-Want-Text: 1\r\n\r\n");
     return (int)strlen(buf);
 }
 
@@ -84,9 +111,11 @@ static void voice_read_reply(struct netconn *conn)
     size_t alen = 0;
     uint8_t hdr_done = 0;
     uint8_t is_audio = 0;
+    uint32_t text_left = 0u;
 
     tlen = 0;
     txt[0] = '\0';
+    s_text_len = 0u;
 
     while (netconn_recv(conn, &nb) == ERR_OK)
     {
@@ -111,10 +140,27 @@ static void voice_read_reply(struct netconn *conn)
                     {
                         hdr_done = 1u;
                         is_audio = (strstr(hdr, "Content-Type: audio/") != NULL) ? 1u : 0u;
+                        text_left = voice_header_u32(hdr, "X-Text-Length:");
                         if (is_audio != 0u)
                         {
                             osal_printf("\n[voice] 收到回答，边下边播...\n");
                         }
+                    }
+                    continue;
+                }
+
+                /* 音频前面是对话文字：先收满并打印，后面的字节再喂 VS1053 */
+                if (text_left > 0u)
+                {
+                    if (s_text_len < (sizeof(s_text) - 1u))
+                    {
+                        s_text[s_text_len++] = (char)c;
+                    }
+                    text_left--;
+                    if (text_left == 0u)
+                    {
+                        s_text[s_text_len] = '\0';
+                        osal_printf("\n%s", s_text);
                     }
                     continue;
                 }

@@ -16,6 +16,7 @@ add_library(modules OBJECT
     music/music.c
     recorder/recorder.c
     recorder/wav.c
+    chat/chat.c
     chat/chat_text.c
     chat/chat_voice.c
     chat/http_post.c
@@ -42,6 +43,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/mplayer_cmd.c
         msh/record_cmd.c
         msh/chat_cmd.c
+        msh/mem_cmd.c
         msh/test_cmd.c
     )
 endif()

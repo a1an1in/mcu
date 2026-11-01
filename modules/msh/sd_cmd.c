@@ -18,7 +18,7 @@
 #include "sd.h"
 
 #define SD_CMD_MAX_WRITE    64u         /* 一次最多写这么多个字节（其余填 0） */
-#define SD_CMD_MAX_BLOCKS   4u          /* sd read 一次最多读几块 */
+#define SD_CMD_MAX_BLOCKS   2u          /* sd read 一次最多读几块 */
 
 /* 读多块时整块都落在这里，所以按最大块数分配（4 × 512 = 2KB） */
 static uint8_t s_block[SD_BLOCK_SIZE * SD_CMD_MAX_BLOCKS] __attribute__((aligned(4)));

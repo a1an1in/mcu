@@ -33,7 +33,7 @@
 #include "recorder.h"
 
 #define FS_DRIVE            "0:"
-#define FS_WORK_SIZE        4096        /* f_mkfs 的工作缓冲，4KB 足够 */
+#define FS_WORK_SIZE        2048        /* f_mkfs 的工作缓冲，4KB 足够 */
 #define FS_IO_SIZE          512         /* 单次读写块（也当递归删除的路径缓冲） */
 #define FS_CAT_CHUNK        128         /* cat 每次打印的字节数：受 RT_CONSOLEBUF_SIZE 限制 */
 #define FS_CAT_MAX          4096        /* cat 最多打这么多，防止刷屏 */

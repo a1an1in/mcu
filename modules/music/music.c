@@ -16,8 +16,8 @@
 #include "music.h"
 #include "vs1053.h"
 
-#define MUSIC_BUF_SIZE      4096u
-#define MUSIC_STACK_SIZE    4096u
+#define MUSIC_BUF_SIZE      1024u
+#define MUSIC_STACK_SIZE    3072u
 #define MUSIC_PRIORITY      15u
 #define MUSIC_STOP_TIMEOUT  200u    /* 200 × 10ms = 2s */
 
@@ -136,6 +136,7 @@ int music_play(const char *path)
     if (osal_thread_create(&s_thread, "music", music_thread, NULL,
                            NULL, MUSIC_STACK_SIZE, MUSIC_PRIORITY) != OSAL_OK)
     {
+        osal_printf("\n[music] 创建播放线程失败（内存不足）\n");
         s_playing = 0u;
         return MUSIC_ERR_IO;
     }

@@ -23,10 +23,6 @@
 #define CHAT_MAX_RESP         4096u   /* 最多打印这么多，避免刷屏 */
 #define CHAT_RECV_TIMEOUT_MS  20000u
 
-static ip_addr_t s_server;
-static uint16_t s_port = 8765u;
-static uint8_t s_configured;
-
 static char s_req[CHAT_REQ_MAX];
 static char s_host[32];
 static char s_out[CHAT_CHUNK + 4u];
@@ -34,41 +30,7 @@ static size_t s_out_len;
 
 /* ============================ 配置 ============================ */
 
-int chat_server_set(const char *ip, uint16_t port)
-{
-    if ((ip == NULL) || (port == 0u))
-    {
-        return CHAT_ERR_PARAM;
-    }
-    if (ip4addr_aton(ip, &s_server) == 0)
-    {
-        return CHAT_ERR_PARAM;
-    }
-    s_port = port;
-    s_configured = 1u;
-    return CHAT_OK;
-}
-
-int chat_server_get(char *ip_buf, unsigned int ip_size, uint16_t *port)
-{
-    if ((ip_buf == NULL) || (ip_size < 8u))
-    {
-        return CHAT_ERR_PARAM;
-    }
-    if (s_configured == 0u)
-    {
-        return -1;
-    }
-    if (ip4addr_ntoa_r(&s_server, ip_buf, (int)ip_size) == NULL)
-    {
-        return CHAT_ERR_PARAM;
-    }
-    if (port != NULL)
-    {
-        *port = s_port;
-    }
-    return CHAT_OK;
-}
+/* 网关地址在 chat.c（默认值 + EEPROM），这里只做 /ask 请求。 */
 
 /* ============================ 输出 ============================ */
 
@@ -154,34 +116,38 @@ int chat_text_ask(const char *text)
     unsigned char hdr_state = 0u;
     unsigned char hdr_done = 0u;
     int truncated = 0;
+    char ip[24];
+    uint16_t port = 0;
+    ip_addr_t addr;
 
     if ((text == NULL) || (text[0] == '\0'))
     {
         return CHAT_ERR_PARAM;
     }
-    if (s_configured == 0u)
+    if (chat_server_get(ip, sizeof(ip), &port) != CHAT_OK)
     {
         return CHAT_ERR_NOSERVER;
     }
-
-    /* Host 头：ip[:port] */
-    if (ip4addr_ntoa_r(&s_server, s_host, (int)sizeof(s_host)) == NULL)
+    if (ip4addr_aton(ip, &addr) == 0)
     {
         return CHAT_ERR_PARAM;
     }
+
+    /* Host 头：ip[:port] */
+    strcpy(s_host, ip);
     n = strlen(s_host);
-    if (s_port != 80u)
+    if (port != 80u)
     {
         if ((n + 7u) >= sizeof(s_host))
         {
             return CHAT_ERR_TOOBIG;
         }
         s_host[n++] = ':';
-        if (s_port >= 10000u) s_host[n++] = (char)('0' + (s_port / 10000u) % 10u);
-        if (s_port >= 1000u)  s_host[n++] = (char)('0' + (s_port / 1000u) % 10u);
-        s_host[n++] = (char)('0' + (s_port / 100u) % 10u);
-        s_host[n++] = (char)('0' + (s_port / 10u) % 10u);
-        s_host[n++] = (char)('0' + s_port % 10u);
+        if (port >= 10000u) s_host[n++] = (char)('0' + (port / 10000u) % 10u);
+        if (port >= 1000u)  s_host[n++] = (char)('0' + (port / 1000u) % 10u);
+        s_host[n++] = (char)('0' + (port / 100u) % 10u);
+        s_host[n++] = (char)('0' + (port / 10u) % 10u);
+        s_host[n++] = (char)('0' + port % 10u);
         s_host[n] = '\0';
     }
 
@@ -199,7 +165,7 @@ int chat_text_ask(const char *text)
 
     netconn_set_recvtimeout(conn, CHAT_RECV_TIMEOUT_MS);
 
-    err = netconn_connect(conn, &s_server, s_port);
+    err = netconn_connect(conn, &addr, port);
     if (err != ERR_OK)
     {
         netconn_delete(conn);

@@ -20,7 +20,7 @@
 
 | 命令 | 作用 |
 |---|---|
-| `chat server <ip> [port]` | 设置 PC 网关，默认端口 8765 |
+| `chat server <ip> [port]` | 设置 PC 网关；存进 EEPROM（掉电不丢），默认 `10.10.10.115:8765` |
 | `chat text <文字>` | 文本对话（`chat ask` 是别名） |
 | `chat voice` | 语音状态：KEY0 / 音量 / MIC 增益 / 网关 |
 | `chat voice on\|off` | 打开/关闭 KEY0 语音键（默认 on） |
@@ -76,7 +76,7 @@ python -u tools/llm_bridge.py
 ```
 
 - 端口被占用时网关会直接退出（提示“端口 8765 已被占用”），先按上面第 1 步杀旧进程；
-- 网关重启不影响板子，`chat server` 配置还在板子内存里；**板子**重启后才需要重设。
+- `chat server` 的设置会写进板载 EEPROM，**网关或板子重启都会自动恢复**，不用每次重设。
 
 ### 2.3 常用环境变量
 
@@ -85,9 +85,9 @@ python -u tools/llm_bridge.py
 | `DEEPSEEK_API_KEY` | API Key（也可写进 `tools/llm_bridge.local.json`） | — |
 | `LLM_MODEL` / `LLM_BASE_URL` | 模型 / 兼容 OpenAI 的地址 | `deepseek-flash` / `https://api.deepseek.com` |
 | `ASR_LANGUAGE` | ASR 语言：`auto` / `zh` / `en` | `auto` |
-| `ASR_MODEL` | 中文/通用 ASR 模型 | `base` |
+| `ASR_MODEL` | 中文/通用 ASR 模型 | `small` |
 | `ASR_MODEL_EN` | 英文专用 ASR 模型 | `small.en` |
-| `ASR_VAD` | VAD 过滤：`1` 开 / `0` 关 | `1` |
+| `ASR_VAD` | VAD 过滤：`1` 开 / `0` 关 | `0` |
 | `TTS_EDGE_VOICE` / `TTS_EDGE_VOICE_EN` | 中文 / 英文音色 | Xiaoxiao / Aria |
 | `VOICE_DUMP` | 每次录音存成 WAV 的目录（排查用） | 不存 |
 | `LLM_BRIDGE_PORT` | 监听端口 | `8765` |
@@ -213,6 +213,7 @@ Content-Type: application/octet-stream
 X-Sample-Rate: 8000
 X-Channels: 1
 X-Bits: 16
+X-Want-Text: 1
 
 <PCM 裸数据>
 ```
@@ -245,11 +246,24 @@ X-Bits: 16
 ```http
 HTTP/1.1 200 OK
 Content-Type: audio/mpeg
-Content-Length: 91296
+Content-Length: 91839
+X-Text-Length: 375
 Connection: close
 
-<MP3 数据>
+<375 字节 UTF-8 文字><MP3 数据>
 ```
+
+`X-Text-Length` 告诉板子：body 最前面这 N 个字节是**对话文字**，剩下才是音频。
+板子先打印文字，再把后面的字节喂 VS1053：
+
+```text
+你: STM32 的定时器怎么使用？
+AI: 用定时器一般四步：先开定时器时钟，再设预分频……
+```
+
+- 文字和音频在同一条 TCP 里，不增加往返，也不拖慢播放；
+- 上限 900 字节（板子缓冲 1KB），超了按 UTF-8 边界截断；
+- 没有 `X-Text-Length` 时，板子把整个 body 都当音频（兼容旧网关）。
 
 | 情况 | Content-Type | 板子行为 |
 |---|---|---|
@@ -290,7 +304,7 @@ Connection: close
 | RAM（BSS） | 约 **+1.2 KB**（请求缓冲 1KB + 输出块） |
 | Shell | `FINSH_CMD_SIZE` 80 → 256，行缓冲与历史各增大（历史 8 条共 2KB） |
 
-当前整体：Flash 185.4 KB / 512 KB，RAM 36.9 KB / 64 KB。
+当前整体：Flash 186.6 KB / 512 KB，RAM 31.9 KB / 64 KB。
 
 ## 8. 排查
 
@@ -311,16 +325,21 @@ Connection: close
 ### 9.1 用法
 
 ```text
-msh > chat server 10.10.10.115 8765
 msh > chat voice gain 2        # 离 MIC 20~30cm，先压低电平
 按住 KEY0 说话 → 松开
 ```
+
+> 网关默认就是 `10.10.10.115:8765`；PC 的 IP 变了才需要
+> `chat server <新IP> [port]`（会存进 EEPROM）。
 
 串口会打印：
 
 ```text
 [voice] 已发送 57344 字节，等待识别/回答...
 [voice] 收到回答，边下边播...
+
+你: STM32 的定时器怎么使用？
+AI: 用定时器一般四步：先开定时器时钟，再设预分频……
 ```
 
 ### 9.2 中英文

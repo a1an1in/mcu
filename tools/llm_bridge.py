@@ -65,6 +65,7 @@ TTS_SCRIPT = os.path.join(TOOLS_DIR, "tts_sapi.ps1")
 VOICE_RATE = 8000
 VOICE_MAX_SECONDS = 30
 VOICE_MAX_PCM = VOICE_RATE * 2 * VOICE_MAX_SECONDS
+VOICE_TEXT_MAX = 900        # 响应里附带的对话文字上限（板子缓冲 1KB）
 
 
 def load_local_config():
@@ -198,17 +199,17 @@ class VoiceEngine:
             self._load(self.asr_model_en)      # 英文用专用模型，首次启动就下好
         return model
 
-    def _dump(self, pcm, rms, peak):
+    def _dump(self, pcm, rms, peak, rate=VOICE_RATE):
         """把上传的 PCM 存成 WAV，方便事后对比识别效果（VOICE_DUMP=目录）。"""
         try:
             os.makedirs(self.dump_dir, exist_ok=True)
             name = time.strftime("voice-%Y%m%d-%H%M%S") + \
-                "-rms%d-peak%d.wav" % (rms, peak)
+                "-rms%d-peak%d-%dHz.wav" % (rms, peak, rate)
             path = os.path.join(self.dump_dir, name)
             with wave.open(path, "wb") as w:
                 w.setnchannels(1)
                 w.setsampwidth(2)
-                w.setframerate(VOICE_RATE)
+                w.setframerate(rate)
                 w.writeframes(pcm)
             keep = sorted(f for f in os.listdir(self.dump_dir)
                           if f.startswith("voice-") and f.endswith(".wav"))
@@ -220,20 +221,40 @@ class VoiceEngine:
         except Exception as e:  # noqa: BLE001
             print("[voice] 保存 PCM 失败: %s" % e)
 
-    def transcribe(self, pcm):
+    @staticmethod
+    def _highpass(pcm, rate, lo=100.0, hi=140.0):
+        """100~140Hz 高通：板子的 MIC 有很强的 50Hz 工频噪声（占噪声能量 95%），
+        滤掉以后语音的信噪比明显变好。用 FFT 实现，numpy 即可，无 scipy 依赖。"""
+        try:
+            import numpy as np
+            x = np.frombuffer(pcm, dtype=np.int16).astype(np.float64)
+            if len(x) < 64:
+                return pcm
+            spec = np.fft.rfft(x)
+            freq = np.fft.rfftfreq(len(x), 1.0 / rate)
+            gain = np.clip((freq - lo) / (hi - lo), 0.0, 1.0)
+            y = np.fft.irfft(spec * gain, n=len(x))
+            return np.clip(y, -32768, 32767).astype(np.int16).tobytes()
+        except Exception:
+            return pcm
+
+    def transcribe(self, pcm, rate=VOICE_RATE):
         """返回 (识别文本, 语言)。asr_language=auto 时由 Whisper 自动判断。"""
         if pcm:
             try:
                 import audioop
                 rms = audioop.rms(pcm, 2)
                 peak = audioop.max(pcm, 2)
-                print("[voice] pcm %d bytes (%.2fs) rms=%d peak=%d%s"
-                      % (len(pcm), len(pcm) / 16000.0, rms, peak,
+                print("[voice] pcm %d bytes (%.2fs @%dHz) rms=%d peak=%d%s"
+                      % (len(pcm), len(pcm) / (rate * 2.0), rate, rms, peak,
                          "  << 可能削波，调小 MIC 增益" if peak >= 30000 else ""))
                 if self.dump_dir:
-                    self._dump(pcm, rms, peak)
+                    self._dump(pcm, rms, peak, rate)
             except Exception:
                 print("[voice] pcm %d bytes" % len(pcm))
+
+            # 存档是原始 PCM；送 ASR 前先滤掉 50Hz 工频噪声
+            pcm = self._highpass(pcm, rate)
 
         auto = (self.asr_language or "").lower() in ("", "auto", "detect")
         model = self._models.get(self.asr_model_name) or self.preload()
@@ -243,7 +264,7 @@ class VoiceEngine:
             with wave.open(path, "wb") as w:
                 w.setnchannels(1)
                 w.setsampwidth(2)
-                w.setframerate(VOICE_RATE)
+                w.setframerate(rate)
                 w.writeframes(pcm)
             segments, info = model.transcribe(
                 path,
@@ -326,7 +347,7 @@ class VoiceEngine:
                 except OSError:
                     pass
 
-    def handle(self, pcm):
+    def handle(self, pcm, rate=VOICE_RATE):
         with self._run_lock:
             if (self.idle_reset > 0) and self._last_time and \
                (time.time() - self._last_time > self.idle_reset):
@@ -334,7 +355,7 @@ class VoiceEngine:
                 print("[voice] 空闲超时，自动清空对话历史")
 
             t0 = time.time()
-            heard, lang = self.transcribe(pcm)
+            heard, lang = self.transcribe(pcm, rate)
             t1 = time.time()
             if heard:
                 answer = self.ask_with_history(heard)
@@ -362,13 +383,15 @@ def make_handler(bridge, voice):
         def log_message(self, fmt, *args):
             pass
 
-        def _send(self, code, body, ctype="text/plain; charset=utf-8"):
+        def _send(self, code, body, ctype="text/plain; charset=utf-8", extra=None):
             if isinstance(body, str):
                 body = body.encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Connection", "close")
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             try:
                 self.wfile.write(body)
@@ -420,18 +443,37 @@ def make_handler(bridge, voice):
                 self._send(501, "[bridge] 语音未启用（faster-whisper 未安装或模型加载失败）")
                 return
 
+            # 板子用 X-Sample-Rate 说明 PCM 采样率（8k/16k…），没写就按 8k
+            try:
+                rate = int(self.headers.get("X-Sample-Rate") or VOICE_RATE)
+            except (TypeError, ValueError):
+                rate = VOICE_RATE
+            if rate < 8000 or rate > 48000:
+                rate = VOICE_RATE
+
             # 板子用 HTTP/1.0、不带 Content-Length：发完 PCM 后半关闭，读到 EOF 为止
             raw = self.rfile.read()
-            if len(raw) > VOICE_MAX_PCM:
-                raw = raw[:VOICE_MAX_PCM]
-            if len(raw) < VOICE_RATE // 2:      # < 0.25 秒
+            max_pcm = rate * 2 * VOICE_MAX_SECONDS
+            if len(raw) > max_pcm:
+                raw = raw[:max_pcm]
+            if len(raw) < rate // 2:            # < 0.25 秒
                 raw = b""                        # 让 ASR 返回空，走“没听清”
 
             t0 = time.time()
             try:
-                audio, mime, heard, answer = voice.handle(raw)
+                audio, mime, heard, answer = voice.handle(raw, rate)
                 print("[voice] total %.1fs" % (time.time() - t0))
-                self._send(200, audio, ctype=mime)
+                # 板子带 X-Want-Text: 1 时，把“你/AI”两行文字放在音频前面
+                want_text = (self.headers.get("X-Want-Text") or "").strip()
+                if want_text not in ("", "0"):
+                    text = ("你: %s\nAI: %s\n"
+                            % (heard or "(没听清)", answer)).encode("utf-8")
+                    if len(text) > VOICE_TEXT_MAX:
+                        text = text[:VOICE_TEXT_MAX].decode("utf-8", "ignore").encode("utf-8")
+                    self._send(200, text + audio, ctype=mime,
+                               extra={"X-Text-Length": str(len(text))})
+                else:
+                    self._send(200, audio, ctype=mime)
                 return
             except Exception as e:  # noqa: BLE001
                 print("[voice] 失败: %s" % e)
@@ -491,12 +533,12 @@ def main():
                     default=int(os.environ.get("LLM_MAX_TOKENS") or cfg.get("max_tokens", 800)))
     ap.add_argument("--timeout", type=int,
                     default=int(os.environ.get("LLM_TIMEOUT") or cfg.get("timeout", 60)))
-    ap.add_argument("--asr-model", default=os.environ.get("ASR_MODEL") or cfg.get("asr_model", "base"))
+    ap.add_argument("--asr-model", default=os.environ.get("ASR_MODEL") or cfg.get("asr_model", "small"))
     ap.add_argument("--asr-model-en",
                     default=os.environ.get("ASR_MODEL_EN") or cfg.get("asr_model_en", "small.en"))
     ap.add_argument("--asr-language", default=os.environ.get("ASR_LANGUAGE") or cfg.get("asr_language", "auto"))
     ap.add_argument("--asr-vad", type=int,
-                    default=int(os.environ.get("ASR_VAD") or cfg.get("asr_vad", 1)))
+                    default=int(os.environ.get("ASR_VAD") or cfg.get("asr_vad", 0)))
     ap.add_argument("--asr-beam-size", type=int,
                     default=int(os.environ.get("ASR_BEAM_SIZE") or cfg.get("asr_beam_size", 5)))
     ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
