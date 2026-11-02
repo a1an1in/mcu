@@ -16,6 +16,7 @@ add_library(modules OBJECT
     music/music.c
     recorder/recorder.c
     recorder/wav.c
+    sensor/sensor.c
     chat/chat.c
     chat/chat_text.c
     chat/chat_voice.c
@@ -44,6 +45,7 @@ if(RTOS STREQUAL "rt-thread")
         msh/record_cmd.c
         msh/chat_cmd.c
         msh/mem_cmd.c
+        msh/adc_cmd.c
         msh/test_cmd.c
     )
 endif()
@@ -62,6 +64,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/fs
     ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
     ${CMAKE_SOURCE_DIR}/modules/music
+    ${CMAKE_SOURCE_DIR}/modules/sensor
     ${CMAKE_SOURCE_DIR}/modules/recorder
     ${CMAKE_SOURCE_DIR}/modules/chat
     ${CMAKE_SOURCE_DIR}/modules/key

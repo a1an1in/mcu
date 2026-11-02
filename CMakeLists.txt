@@ -69,6 +69,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/drivers/sd
     ${CMAKE_SOURCE_DIR}/drivers/block
     ${CMAKE_SOURCE_DIR}/drivers/audio
+    ${CMAKE_SOURCE_DIR}/drivers/adc
     ${CMAKE_SOURCE_DIR}/modules/fs
     ${CMAKE_SOURCE_DIR}/modules/fs/fatfs
     ${CMAKE_SOURCE_DIR}/drivers
@@ -138,6 +139,7 @@ add_executable(stm32f103.elf
     $<TARGET_OBJECTS:sd>
     $<TARGET_OBJECTS:block>
     $<TARGET_OBJECTS:audio>
+    $<TARGET_OBJECTS:adc>
     $<TARGET_OBJECTS:osal>
     $<TARGET_OBJECTS:modules>
     $<TARGET_OBJECTS:applications>

@@ -38,9 +38,41 @@ static volatile uint8_t s_busy;
 static volatile uint8_t s_recording;
 static uint16_t s_gain_reg = VOICE_GAIN_DEFAULT;
 static uint8_t s_pcm[VOICE_BUF_SIZE] __attribute__((aligned(4)));
-/* 网关在音频前附带的一小段对话文字（你: ... / AI: ...），上限 1KB */
-static char s_text[1024];
+/* 网关在音频前附带的一小段对话文字（你: ... / AI: ...），上限 1900 字节 */
+static char s_text[2048];
 static size_t s_text_len;
+
+/* osal_printf 的格式化缓冲只有 RT_CONSOLEBUF_SIZE(512) 字节，
+ * 长文本一次打印会被截断，所以按 UTF-8 边界分段输出。 */
+static void voice_print_text(void)
+{
+    size_t off = 0u;
+
+    osal_printf("\n");
+    while (off < s_text_len)
+    {
+        char tmp[256];
+        size_t n = s_text_len - off;
+
+        if (n > (sizeof(tmp) - 1u))
+        {
+            n = sizeof(tmp) - 1u;
+        }
+        while ((n > 0u) &&
+               (((unsigned char)s_text[off + n] & 0xC0u) == 0x80u))
+        {
+            n--;                    /* 不要把 UTF-8 字符切一半 */
+        }
+        if (n == 0u)
+        {
+            break;
+        }
+        memcpy(tmp, &s_text[off], n);
+        tmp[n] = '\0';
+        osal_printf("%s", tmp);
+        off += n;
+    }
+}
 
 /* 从响应头里取一个十进制整数（找不到返回 0） */
 static uint32_t voice_header_u32(const char *hdr, const char *name)
@@ -112,6 +144,8 @@ static void voice_read_reply(struct netconn *conn)
     uint8_t hdr_done = 0;
     uint8_t is_audio = 0;
     uint32_t text_left = 0u;
+    uint32_t fed = 0u;
+    uint32_t werr = 0u;
 
     tlen = 0;
     txt[0] = '\0';
@@ -160,7 +194,7 @@ static void voice_read_reply(struct netconn *conn)
                     if (text_left == 0u)
                     {
                         s_text[s_text_len] = '\0';
-                        osal_printf("\n%s", s_text);
+                        voice_print_text();
                     }
                     continue;
                 }
@@ -170,7 +204,11 @@ static void voice_read_reply(struct netconn *conn)
                     abuf[alen++] = c;
                     if (alen >= sizeof(abuf))
                     {
-                        (void)vs1053_write_data(dev, abuf, (uint16_t)alen);
+                        if (vs1053_write_data(dev, abuf, (uint16_t)alen) != VS1053_OK)
+                        {
+                            werr++;
+                        }
+                        fed += (uint32_t)alen;
                         alen = 0;
                     }
                 }
@@ -189,8 +227,14 @@ static void voice_read_reply(struct netconn *conn)
     {
         if (alen != 0u)
         {
-            (void)vs1053_write_data(dev, abuf, (uint16_t)alen);
+            if (vs1053_write_data(dev, abuf, (uint16_t)alen) != VS1053_OK)
+            {
+                werr++;
+            }
+            fed += (uint32_t)alen;
         }
+        osal_printf("\n[voice] 音频 %u 字节，写失败 %u 次，ready=%d\n",
+                    (unsigned)fed, (unsigned)werr, (int)dev->ready);
     }
     else
     {
@@ -293,10 +337,20 @@ static void voice_cycle(void)
     (void)netconn_shutdown(conn, 0, 1);
 
     /* 与 PC 处理并行：把 VS1053 从录音切回播放 */
-    (void)vs1053_record_stop(dev);
+    {
+        int rs = vs1053_record_stop(dev);
+
+        if (rs != VS1053_OK)
+        {
+            osal_printf("\n[voice] 录音切回播放失败(%d)，重试初始化\n", rs);
+            (void)vs1053_init(dev);
+        }
+    }
 
     /* 录音切回播放会把音量重置成默认 80；这里恢复 music/voice vol 的值 */
     (void)vs1053_set_volume(dev, music_get_volume());
+    osal_printf("\n[voice] 播放准备: ready=%d 音量=%d\n",
+                (int)dev->ready, music_get_volume());
 
     osal_printf("\n[voice] 已发送 %u 字节，等待识别/回答...\n", (unsigned)sent);
 

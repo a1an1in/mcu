@@ -34,6 +34,8 @@
 #include "sd.h"
 #include "sd_blkdev.h"
 #include "stm32f1_sdio.h"
+#include "adc.h"
+#include "adc_config.h"
 
 /* ================= 板级事实 ================= */
 #define UART_BAUD       115200u
@@ -418,7 +420,24 @@ static void board_sd_init(void)
     }
 }
 
-/* ================= 板级入口（由 rtthread_startup 调用） ================= */
+/* ================= ADC =================
+ * 默认只绑内部温度传感器（ADC1_IN16）。要走 PA1 电位器时把数组改成
+ * { ADC_TEMP_CHANNEL, 1u }，业务层按交错样本处理即可。
+ */
+static struct adc_dev s_adc;
+static const uint8_t s_adc_channels[] = { ADC_TEMP_CHANNEL };
+
+static void board_adc_init(void)
+{
+    if (adc_bind(&s_adc, s_adc_channels, 1u, ADC_TEMP_SAMPLE_TIME) != ADC_OK)
+    {
+        rt_kprintf("[adc] 绑定失败\n");
+        return;
+    }
+    adc_set_default(&s_adc);
+}
+
+/* ================= 板级入口 ================= */
 void rt_hw_board_init(void)
 {
     int clock_ok;
@@ -483,4 +502,7 @@ void rt_hw_board_init(void)
 
     /* 阶段 7：SDIO 主机（只配引脚/上电，卡的识别推迟到第一次访问） */
     board_sd_init();
+
+    /* 阶段 8：ADC 绑定（只记录通道，采样在第一次 adc start 时启动） */
+    board_adc_init();
 }

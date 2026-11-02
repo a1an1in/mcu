@@ -65,7 +65,7 @@ TTS_SCRIPT = os.path.join(TOOLS_DIR, "tts_sapi.ps1")
 VOICE_RATE = 8000
 VOICE_MAX_SECONDS = 30
 VOICE_MAX_PCM = VOICE_RATE * 2 * VOICE_MAX_SECONDS
-VOICE_TEXT_MAX = 900        # 响应里附带的对话文字上限（板子缓冲 1KB）
+VOICE_TEXT_MAX = 1900       # 响应里附带的对话文字上限（板子缓冲 2KB）
 
 
 def load_local_config():
@@ -347,7 +347,7 @@ class VoiceEngine:
                 except OSError:
                     pass
 
-    def handle(self, pcm, rate=VOICE_RATE):
+    def answer(self, pcm, rate=VOICE_RATE):
         with self._run_lock:
             if (self.idle_reset > 0) and self._last_time and \
                (time.time() - self._last_time > self.idle_reset):
@@ -365,15 +365,54 @@ class VoiceEngine:
                 answer = "我没听清，请再说一遍。"
                 print("[voice] 识别为空：如果麦克风有电平，试 ASR_VAD=0")
             t2 = time.time()
-            # 太长的回答朗读会很久，按配置截断
-            speak = answer[:self.max_chars]
-            audio, mime = self.synthesize(speak, lang)
-            t3 = time.time()
             self._last_time = time.time()
-            print("[voice] asr %.1fs llm %.1fs tts %.1fs | [%s] %r -> %r (history %d)"
-                  % (t1 - t0, t2 - t1, t3 - t2, lang, heard, answer,
+            print("[voice] asr %.1fs llm %.1fs | [%s] %r -> %r (history %d)"
+                  % (t1 - t0, t2 - t1, lang, heard, answer,
                      len(self._history) // 2))
-            return audio, mime, heard, answer
+            return heard, answer, lang
+
+    def _edge_chunks(self, text, voice):
+        """逐块产出 edge-tts 的音频（边生成边下发，首音更快）。"""
+        import asyncio
+        import edge_tts
+
+        async def _agen():
+            comm = edge_tts.Communicate(text, voice, rate=self.tts_edge_rate)
+            async for ch in comm.stream():
+                if (ch.get("type") == "audio") and ch.get("data"):
+                    yield ch["data"]
+
+        loop = asyncio.new_event_loop()
+        try:
+            it = _agen()
+            while True:
+                try:
+                    chunk = loop.run_until_complete(it.__anext__())
+                except StopAsyncIteration:
+                    break
+                yield chunk
+        finally:
+            loop.close()
+
+    def tts_start(self, text, lang="zh"):
+        """返回 (mime, 音频块迭代器)；edge 不可用时回退 SAPI 整段。"""
+        is_en = str(lang).lower().startswith("en")
+
+        if self.tts_backend == "edge":
+            voice = self.tts_edge_voice_en if is_en else self.tts_edge_voice
+            try:
+                gen = self._edge_chunks(text, voice)
+                first = next(gen)          # 先拿到首块，确定能播再发响应头
+                def _chain(head, rest):
+                    yield head
+                    for c in rest:
+                        yield c
+                return "audio/mpeg", _chain(first, gen)
+            except Exception as e:  # noqa: BLE001
+                print("[voice] edge-tts 流式失败，回退 SAPI: %s" % e)
+
+        audio, mime = self.synthesize(text, lang)
+        return mime, iter([audio])
 
 
 def make_handler(bridge, voice):
@@ -460,26 +499,63 @@ def make_handler(bridge, voice):
                 raw = b""                        # 让 ASR 返回空，走“没听清”
 
             t0 = time.time()
+            started = False
             try:
-                audio, mime, heard, answer = voice.handle(raw, rate)
-                print("[voice] total %.1fs" % (time.time() - t0))
-                # 板子带 X-Want-Text: 1 时，把“你/AI”两行文字放在音频前面
-                want_text = (self.headers.get("X-Want-Text") or "").strip()
-                if want_text not in ("", "0"):
-                    text = ("你: %s\nAI: %s\n"
-                            % (heard or "(没听清)", answer)).encode("utf-8")
-                    if len(text) > VOICE_TEXT_MAX:
-                        text = text[:VOICE_TEXT_MAX].decode("utf-8", "ignore").encode("utf-8")
-                    self._send(200, text + audio, ctype=mime,
-                               extra={"X-Text-Length": str(len(text))})
-                else:
-                    self._send(200, audio, ctype=mime)
+                heard, answer, lang = voice.answer(raw, rate)
+
+                # 板子带 X-Want-Text: 1 时，把「你/AI」两行文字放在音频前面
+                want_text = (self.headers.get("X-Want-Text") or "").strip() \
+                    not in ("", "0")
+                text = ("你: %s\nAI: %s\n"
+                        % (heard or "(没听清)", answer)).encode("utf-8")
+                if len(text) > VOICE_TEXT_MAX:
+                    text = (text[:VOICE_TEXT_MAX].decode("utf-8", "ignore")
+                            .encode("utf-8") + "\n…(文字过长已截断)\n".encode("utf-8"))
+
+                speak = answer[:voice.max_chars]
+
+                # 先把响应头和文字发出去（板子马上能显示），再开始流式 TTS。
+                # 预计的 MIME 先按后端给；edge 失败回退 SAPI 时，VS1053 会自己识别 WAV。
+                expect_mime = "audio/mpeg" if voice.tts_backend == "edge" else "audio/wav"
+                self.send_response(200)
+                started = True
+                self.send_header("Content-Type", expect_mime)
+                self.send_header("Connection", "close")
+                if want_text:
+                    self.send_header("X-Text-Length", str(len(text)))
+                self.end_headers()
+                self.close_connection = True
+
+                if want_text:
+                    self.wfile.write(text)
+                    self.wfile.flush()
+
+                mime, chunks = voice.tts_start(speak, lang)
+                if mime != expect_mime:
+                    print("[voice] TTS 回退为 %s" % mime)
+
+                t_first = 0.0
+                audio_bytes = 0
+                for chunk in chunks:
+                    if t_first == 0.0:
+                        t_first = time.time() - t0
+                        print("[voice] 首块音频 %.1fs" % t_first)
+                    audio_bytes += len(chunk)
+                    self.wfile.write(chunk)
+                print("[voice] total %.1fs（首块 %.1fs，音频 %d 字节）"
+                      % (time.time() - t0, t_first, audio_bytes))
+                return
+            except (BrokenPipeError, ConnectionResetError):
+                print("[voice] 板子断开连接")
                 return
             except Exception as e:  # noqa: BLE001
+                err = e
                 print("[voice] 失败: %s" % e)
+                if started:
+                    return
 
             # 失败也要尽量“说出来”，说不出来就回文本
-            msg = "出错了：%s" % e
+            msg = "出错了：%s" % err
             try:
                 data, mime = voice.synthesize(msg[:120])
                 self._send(200, data, ctype=mime)
