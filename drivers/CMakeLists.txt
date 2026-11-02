@@ -17,6 +17,7 @@
 add_subdirectory(block)
 add_subdirectory(audio)
 add_subdirectory(adc)
+add_subdirectory(sram)
 add_subdirectory(gpio)
 add_subdirectory(uart)
 add_subdirectory(net)

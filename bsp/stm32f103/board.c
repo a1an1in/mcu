@@ -36,6 +36,8 @@
 #include "stm32f1_sdio.h"
 #include "adc.h"
 #include "adc_config.h"
+#include "sram.h"
+#include "sram_config.h"
 
 /* ================= 板级事实 ================= */
 #define UART_BAUD       115200u
@@ -437,6 +439,27 @@ static void board_adc_init(void)
     adc_set_default(&s_adc);
 }
 
+/* ================= 外部 SRAM =================
+ * 战舰 V4：IS62WV51216（1MB），FSMC Bank1 NE3，映射到 0x68000000。
+ * 只做 FSMC/GPIO 初始化，分配器在第一次 sram_alloc 时建立。
+ */
+static struct sram_dev s_sram;
+
+static void board_sram_init(void)
+{
+    if (sram_bind(&s_sram, SRAM_BASE_ADDR, SRAM_SIZE_BYTES) != SRAM_OK)
+    {
+        rt_kprintf("[sram] 绑定失败\n");
+        return;
+    }
+    if (sram_init(&s_sram) != SRAM_OK)
+    {
+        rt_kprintf("[sram] FSMC 初始化失败\n");
+        return;
+    }
+    sram_set_default(&s_sram);
+}
+
 /* ================= 板级入口 ================= */
 void rt_hw_board_init(void)
 {
@@ -505,4 +528,7 @@ void rt_hw_board_init(void)
 
     /* 阶段 8：ADC 绑定（只记录通道，采样在第一次 adc start 时启动） */
     board_adc_init();
+
+    /* 阶段 9：外部 SRAM（FSMC NE3，1MB） */
+    board_sram_init();
 }
