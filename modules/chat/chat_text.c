@@ -16,14 +16,15 @@
 #include "lwip/ip_addr.h"
 
 #include "chat.h"
+#include "buf_alloc.h"
 #include "http_post.h"
 
-#define CHAT_REQ_MAX          1024u
+#define CHAT_REQ_MAX          4096u
 #define CHAT_CHUNK            128u    /* 单次 osal_printf 的字节数（控制台缓冲 512） */
 #define CHAT_MAX_RESP         4096u   /* 最多打印这么多，避免刷屏 */
 #define CHAT_RECV_TIMEOUT_MS  20000u
 
-static char s_req[CHAT_REQ_MAX];
+static char *s_req;
 static char s_host[32];
 static char s_out[CHAT_CHUNK + 4u];
 static size_t s_out_len;
@@ -124,6 +125,14 @@ int chat_text_ask(const char *text)
     {
         return CHAT_ERR_PARAM;
     }
+    if (s_req == NULL)
+    {
+        s_req = buf_alloc(CHAT_REQ_MAX);
+        if (s_req == NULL)
+        {
+            return CHAT_ERR_NOMEM;
+        }
+    }
     if (chat_server_get(ip, sizeof(ip), &port) != CHAT_OK)
     {
         return CHAT_ERR_NOSERVER;
@@ -151,7 +160,7 @@ int chat_text_ask(const char *text)
         s_host[n] = '\0';
     }
 
-    req_len = http_post_plain(s_req, sizeof(s_req), s_host, "/ask", text);
+    req_len = http_post_plain(s_req, CHAT_REQ_MAX, s_host, "/ask", text);
     if (req_len < 0)
     {
         return CHAT_ERR_TOOBIG;

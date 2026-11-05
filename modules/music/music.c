@@ -14,9 +14,10 @@
 #include "ff.h"
 #include "fs_util.h"
 #include "music.h"
+#include "buf_alloc.h"
 #include "vs1053.h"
 
-#define MUSIC_BUF_SIZE      1024u
+#define MUSIC_BUF_SIZE      8192u
 #define MUSIC_STACK_SIZE    3072u
 #define MUSIC_PRIORITY      15u
 #define MUSIC_STOP_TIMEOUT  200u    /* 200 × 10ms = 2s */
@@ -26,7 +27,7 @@ static volatile uint8_t s_playing;
 static volatile uint8_t s_stop;
 static volatile uint8_t s_volume = 80u;
 static char s_path[FS_PATH_MAX];
-static uint8_t s_buf[MUSIC_BUF_SIZE] __attribute__((aligned(4)));
+static uint8_t *s_buf;
 
 /* ============================ 播放线程 ============================ */
 
@@ -75,7 +76,7 @@ static void music_thread(void *param)
 
     while (s_stop == 0u)
     {
-        fr = f_read(&fil, s_buf, sizeof(s_buf), &br);
+        fr = f_read(&fil, s_buf, MUSIC_BUF_SIZE, &br);
         if (fr != FR_OK)
         {
             osal_printf("[music] 读文件失败 (FRESULT=%d)\n", (int)fr);
@@ -105,6 +106,13 @@ static void music_thread(void *param)
     (void)vs1053_cancel(dev);
 
 out:
+    /* 播放线程退出：缓冲不再需要，交还给外部 SRAM / 内部堆 */
+    if (s_buf != NULL)
+    {
+        buf_free(s_buf);
+        s_buf = NULL;
+    }
+
     s_playing = 0u;
     s_thread = OSAL_NULL;
 }
@@ -130,6 +138,16 @@ int music_play(const char *path)
         return MUSIC_ERR_PARAM;
     }
 
+    if (s_buf == NULL)
+    {
+        s_buf = buf_alloc(MUSIC_BUF_SIZE);
+        if (s_buf == NULL)
+        {
+            osal_printf("\n[music] 播放缓冲分配失败\n");
+            return MUSIC_ERR_IO;
+        }
+    }
+
     s_stop = 0u;
     s_playing = 1u;
 
@@ -137,6 +155,8 @@ int music_play(const char *path)
                            NULL, MUSIC_STACK_SIZE, MUSIC_PRIORITY) != OSAL_OK)
     {
         osal_printf("\n[music] 创建播放线程失败（内存不足）\n");
+        buf_free(s_buf);
+        s_buf = NULL;
         s_playing = 0u;
         return MUSIC_ERR_IO;
     }

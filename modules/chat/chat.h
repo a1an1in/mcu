@@ -26,6 +26,7 @@ extern "C" {
 #define CHAT_ERR_NOSERVER   (-2)    /* 还没 chat server */
 #define CHAT_ERR_NET        (-3)    /* 连不上 / 发送失败 */
 #define CHAT_ERR_TOOBIG     (-4)    /* 问题太长，请求缓冲区装不下 */
+#define CHAT_ERR_NOMEM      (-6)    /* 分配请求缓冲区失败 */
 
 /* ============================ 网关配置 ============================ */
 

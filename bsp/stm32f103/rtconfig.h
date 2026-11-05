@@ -51,12 +51,11 @@
 #define RT_USING_SMALL_MEM
 #define RT_USING_SMALL_MEM_AS_HEAP
 
-/* ===== 控制台：rt_kprintf 依赖 RT_USING_CONSOLE =====
- * RT_CONSOLEBUF_SIZE 是**单次** rt_kprintf 的输出上限（超出直接截断，
- * 连一半的多字节汉字都会被切断）。命令帮助、文件内容打印很容易超，
- * 所以放大到 512；长内容仍建议分次打印。 */
+/* ===== 控制台：rt_kprintf / msh prompt 共用 RT_CONSOLEBUF_SIZE =====
+ * 长文本已由 chat 按 128~255 字节分段打印，256 足够；
+ * 原来 512 是给未分段的大块打印兜底，已不再需要。 */
 #define RT_USING_CONSOLE
-#define RT_CONSOLEBUF_SIZE      512
+#define RT_CONSOLEBUF_SIZE      256
 
 /* ===== libc 策略：使用内核自带 klibc，不依赖外部 libc =====
  * 定义 RT_USING_NANO：让 rttypes.h 跳过 <sys/types.h>/<sys/errno.h>，
@@ -66,7 +65,7 @@
 
 /* ===== 用户主线程 ===== */
 #define RT_USING_USER_MAIN
-#define RT_MAIN_THREAD_STACK_SIZE  4096
+#define RT_MAIN_THREAD_STACK_SIZE  2048
 #define RT_MAIN_THREAD_PRIORITY    10
 
 /* ===== FINSH Shell（msh 交互式命令行）===== */

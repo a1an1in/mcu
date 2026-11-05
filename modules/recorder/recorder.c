@@ -15,6 +15,7 @@
 
 #include "ff.h"
 #include "recorder.h"
+#include "buf_alloc.h"
 #include "vs1053.h"
 #include "wav.h"
 
@@ -31,7 +32,7 @@ static volatile uint32_t s_bytes;
 static uint32_t s_max_seconds;
 static uint16_t s_gain_reg;
 static char s_name[32];
-static uint8_t s_buf[RECORDER_BUF_SIZE] __attribute__((aligned(4)));
+static uint8_t *s_buf;
 
 /* ============================ 文件名 ============================ */
 
@@ -172,6 +173,13 @@ static void recorder_thread(void *param)
                 s_name, (unsigned)s_bytes, (unsigned)(s_bytes / 16000u));
 
 out:
+    /* 录音线程退出：缓冲不再需要，交还给外部 SRAM / 内部堆 */
+    if (s_buf != NULL)
+    {
+        buf_free(s_buf);
+        s_buf = NULL;
+    }
+
     s_recording = 0u;
     s_thread = OSAL_NULL;
 }
@@ -193,6 +201,15 @@ int recorder_start(uint32_t max_seconds, uint16_t gain)
         return RECORDER_ERR_BUSY;
     }
 
+    if (s_buf == NULL)
+    {
+        s_buf = buf_alloc(RECORDER_BUF_SIZE);
+        if (s_buf == NULL)
+        {
+            return RECORDER_ERR_IO;
+        }
+    }
+
     s_stop = 0u;
     s_bytes = 0u;
     s_max_seconds = max_seconds;
@@ -203,6 +220,8 @@ int recorder_start(uint32_t max_seconds, uint16_t gain)
     if (osal_thread_create(&s_thread, "record", recorder_thread, NULL,
                            NULL, RECORDER_STACK_SIZE, RECORDER_PRIORITY) != OSAL_OK)
     {
+        buf_free(s_buf);
+        s_buf = NULL;
         s_recording = 0u;
         return RECORDER_ERR_IO;
     }

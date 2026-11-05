@@ -65,9 +65,9 @@
 #define MEMP_NUM_NETCONN      4
 
 /* ---------- Pbuf ----------
- * 每个 pbuf 约 1516B。64KB 的 RAM 里 16 个就是 24KB，太奢侈；
- * 收到一帧就尽快交给 lwIP，6 个足够（CH395 本身只缓存 1 帧）。 */
-#define PBUF_POOL_SIZE        6
+ * 每个 pbuf 约 1.5KB。TCP 接收窗口 2*MSS≈2.9KB，4 个足够覆盖窗口，
+ * 还能留出突发余量；CH395 本身只缓存 1 帧，不需要 6 个。 */
+#define PBUF_POOL_SIZE        4
 /* 必须 >= 1514（MACRAW 整帧），否则一帧要跨两个 pbuf，
  * 驱动就得先拷到临时缓冲再 pbuf_take，白白多一次内存拷贝 */
 #define PBUF_POOL_BUFSIZE     1520
@@ -104,6 +104,9 @@
 #define LWIP_ICMP             1
 #define LWIP_DHCP             1
 #define LWIP_DNS              1
+/* 只保留 1 个 DNS 服务器、域名最长 64 字节，省 dns_table 和 netdb 的 s_hostname */
+#define DNS_MAX_SERVERS       1
+#define DNS_MAX_NAME_LENGTH   64
 #define LWIP_UDP              1
 #define LWIP_RAW              1
 

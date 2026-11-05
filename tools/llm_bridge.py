@@ -23,8 +23,8 @@
     python tools/llm_bridge.py
 
 依赖：Python 3.8+；语音需要
-    pip install faster-whisper
-    （TTS 用 Windows 自带 SAPI，不需要装包）
+    pip install faster-whisper edge-tts zhconv
+    （TTS 用 Windows 自带 SAPI，不需要装包；zhconv 用于繁体转简体）
 """
 
 import argparse
@@ -45,14 +45,31 @@ from urllib import error, request
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
+try:
+    import zhconv
+except ImportError:  # 没装时退化为原文，不影响启动
+    zhconv = None
+
+
+def to_simplified(text):
+    """把模型/ASR 输出统一转成简体中文。"""
+    if not text or zhconv is None:
+        return text
+    try:
+        return zhconv.convert(text, "zh-cn")
+    except Exception:  # noqa: BLE001
+        return text
+
 DEFAULT_SYSTEM = (
-    "你是嵌入式开发助手。回答用中文，尽量简短（不超过 200 字）；"
+    "你是嵌入式开发助手。回答用简体中文，尽量简短（不超过 200 字）；"
     "必要时给出 C 代码片段，不要长篇大论。"
+    "不要输出繁体字。"
 )
 DEFAULT_VOICE_SYSTEM = (
     "你是嵌入式开发助手，正在和用户语音对话。"
     "用和用户相同的语言回答：用户说中文就用中文，用户说英文就用英文。"
     "口语化，2~4 句话，尽量给出有用的信息，不超过 150 字；"
+    "中文必须使用简体中文，不要使用繁体字；即使问题里出现繁体字，也用简体回答。"
     "不要 Markdown、不要代码块、不要列表，适合直接朗读。"
 )
 
@@ -63,9 +80,9 @@ CONFIG_PATH = os.path.join(TOOLS_DIR, "llm_bridge.local.json")
 TTS_SCRIPT = os.path.join(TOOLS_DIR, "tts_sapi.ps1")
 
 VOICE_RATE = 8000
-VOICE_MAX_SECONDS = 30
+VOICE_MAX_SECONDS = 60
 VOICE_MAX_PCM = VOICE_RATE * 2 * VOICE_MAX_SECONDS
-VOICE_TEXT_MAX = 1900       # 响应里附带的对话文字上限（板子缓冲 2KB）
+VOICE_TEXT_MAX = 3800       # 响应里附带的对话文字上限（板子缓冲 4KB）
 
 
 def load_local_config():
@@ -174,6 +191,7 @@ class VoiceEngine:
             messages.extend(self._history[-self.history_turns * 2:])
         messages.append({"role": "user", "content": text})
         answer = self.bridge.chat(messages, max_tokens=self.voice_max_tokens)
+        answer = to_simplified(answer)
 
         self._history.append({"role": "user", "content": text})
         self._history.append({"role": "assistant", "content": answer})
@@ -356,6 +374,7 @@ class VoiceEngine:
 
             t0 = time.time()
             heard, lang = self.transcribe(pcm, rate)
+            heard = to_simplified(heard)
             t1 = time.time()
             if heard:
                 answer = self.ask_with_history(heard)
@@ -472,6 +491,7 @@ def make_handler(bridge, voice):
             t0 = time.time()
             try:
                 answer = bridge.ask(text)
+                answer = to_simplified(answer)
             except Exception as e:  # noqa: BLE001
                 answer = "[bridge] 请求失败: %s" % e
             print("[ans] %.1fs, %d chars" % (time.time() - t0, len(answer)))

@@ -37,7 +37,7 @@ python tools/llm_bridge.py
 首次需要装 ASR 和 TTS：
 
 ```powershell
-pip install faster-whisper edge-tts
+pip install faster-whisper edge-tts zhconv
 ```
 
 模型默认 `base`（约 145MB）。国内访问 HuggingFace 会超时，脚本已默认：
@@ -122,7 +122,8 @@ msh > chat voice
 | `chat voice gain [0-15]` | 查询/设置 MIC 增益（0 = 自动 AGC，默认 4） |
 | `chat voice` | 状态 + 网关 |
 
-- 录音上限 30 秒；
+- 录音上限 60 秒；
+- 播放中按住 KEY0 可立即打断当前回答；如果键不松，会直接开始下一轮录音；
 - 录音时功放关闭（防啸叫）；
 - 松键后 VS1053 会重新初始化（恢复播放时钟/音量），与 PC 的 ASR 并行；
 - 正在 `record` 或播放音乐时按 KEY0：语音流程会先拒绝/停止音乐。

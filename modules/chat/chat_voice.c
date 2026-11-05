@@ -17,6 +17,7 @@
 #include "lwip/ip_addr.h"
 
 #include "chat.h"
+#include "buf_alloc.h"
 #include "key.h"
 #include "music.h"
 #include "recorder.h"
@@ -25,8 +26,9 @@
 #define VOICE_KEY           KEY_0
 #define VOICE_RATE          8000u
 #define VOICE_GAIN_DEFAULT  4096u       /* MIC 默认 4 倍增益 */
-#define VOICE_BUF_SIZE      512u
-#define VOICE_MAX_SECONDS   30u
+#define VOICE_BUF_SIZE      1024u
+#define VOICE_TEXT_SIZE     4096u       /* 网关文字块上限 3800 字节，留点余量 */
+#define VOICE_MAX_SECONDS   60u
 #define VOICE_MAX_BYTES     (VOICE_RATE * 2u * VOICE_MAX_SECONDS)
 #define VOICE_STACK_SIZE    4096u
 #define VOICE_PRIORITY      14u
@@ -36,10 +38,11 @@ static osal_thread_t s_thread;
 static volatile uint8_t s_enabled = 1u;
 static volatile uint8_t s_busy;
 static volatile uint8_t s_recording;
+static volatile uint8_t s_interrupted;
 static uint16_t s_gain_reg = VOICE_GAIN_DEFAULT;
-static uint8_t s_pcm[VOICE_BUF_SIZE] __attribute__((aligned(4)));
-/* 网关在音频前附带的一小段对话文字（你: ... / AI: ...），上限 1900 字节 */
-static char s_text[2048];
+static uint8_t *s_pcm;
+/* 网关在音频前附带的一小段对话文字（你: ... / AI: ...），上限 3800 字节 */
+static char *s_text;
 static size_t s_text_len;
 
 /* osal_printf 的格式化缓冲只有 RT_CONSOLEBUF_SIZE(512) 字节，
@@ -146,6 +149,7 @@ static void voice_read_reply(struct netconn *conn)
     uint32_t text_left = 0u;
     uint32_t fed = 0u;
     uint32_t werr = 0u;
+    uint8_t stop = 0u;
 
     tlen = 0;
     txt[0] = '\0';
@@ -161,6 +165,15 @@ static void voice_read_reply(struct netconn *conn)
             for (i = 0; i < len; i++)
             {
                 uint8_t c = ((uint8_t *)data)[i];
+
+                /* 播放中按 KEY0：打断当前回答，回到按键线程重新录音 */
+                if ((is_audio != 0u) && ((i & 0x7Fu) == 0u) &&
+                    (key_is_down(VOICE_KEY) != 0))
+                {
+                    s_interrupted = 1u;
+                    stop = 1u;
+                    break;
+                }
 
                 if (hdr_done == 0u)
                 {
@@ -186,7 +199,7 @@ static void voice_read_reply(struct netconn *conn)
                 /* 音频前面是对话文字：先收满并打印，后面的字节再喂 VS1053 */
                 if (text_left > 0u)
                 {
-                    if (s_text_len < (sizeof(s_text) - 1u))
+                    if (s_text_len < (VOICE_TEXT_SIZE - 1u))
                     {
                         s_text[s_text_len++] = (char)c;
                     }
@@ -221,6 +234,16 @@ static void voice_read_reply(struct netconn *conn)
         } while (netbuf_next(nb) >= 0);
 
         netbuf_delete(nb);
+        if (stop != 0u)
+        {
+            break;
+        }
+    }
+
+    if (s_interrupted != 0u)
+    {
+        (void)vs1053_cancel(dev);
+        osal_printf("\n[voice] 按键打断播放\n");
     }
 
     if (is_audio != 0u)
@@ -331,6 +354,12 @@ static void voice_cycle(void)
         sent += VOICE_BUF_SIZE;
     }
 
+    if (sent >= VOICE_MAX_BYTES)
+    {
+        osal_printf("\n[voice] 达到 %u 秒录音上限，自动结束\n",
+                    (unsigned)VOICE_MAX_SECONDS);
+    }
+
     s_recording = 0u;
 
     /* 半关闭发送：PC 读到 EOF 就开始 ASR */
@@ -375,8 +404,16 @@ static void voice_thread(void *param)
         if ((s_enabled != 0u) && (s_busy == 0u) && (down != 0) && (last == 0))
         {
             s_busy = 1u;
+            s_interrupted = 0u;
             voice_cycle();
             s_busy = 0u;
+
+            /* 播放中被 KEY0 打断：如果键还按着，直接开始新一轮录音 */
+            if ((s_interrupted != 0u) && (key_is_down(VOICE_KEY) != 0))
+            {
+                last = 0;
+                continue;
+            }
 
             /* 等按键松开，避免一次长按触发第二轮 */
             while (key_is_down(VOICE_KEY) != 0)
@@ -399,6 +436,22 @@ int chat_voice_service_start(void)
         return 0;
     }
 
+    if (s_pcm == NULL)
+    {
+        s_pcm = buf_alloc(VOICE_BUF_SIZE);
+    }
+    if (s_text == NULL)
+    {
+        s_text = buf_alloc(VOICE_TEXT_SIZE);
+    }
+    if ((s_pcm == NULL) || (s_text == NULL))
+    {
+        osal_printf("\n[voice] 内存分配失败\n");
+        if (s_pcm != NULL) { buf_free(s_pcm); s_pcm = NULL; }
+        if (s_text != NULL) { buf_free(s_text); s_text = NULL; }
+        return -1;
+    }
+
     key_init();     /* 幂等 */
 
     if (osal_thread_create(&s_thread, "voice", voice_thread, NULL,
@@ -415,7 +468,7 @@ void chat_voice_key_enable(int on)
     s_enabled = (on != 0) ? 1u : 0u;
 }
 
-int chat_chat_voice_key_enabled(void)
+int chat_voice_key_enabled(void)
 {
     return (s_enabled != 0u) ? 1 : 0;
 }

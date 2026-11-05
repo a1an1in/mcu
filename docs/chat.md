@@ -221,9 +221,9 @@ X-Want-Text: 1
 | 项目 | 说明 |
 |---|---|
 | `HTTP/1.0` | 不用 `Content-Length`，靠 **半关闭** 表示“说完了” |
-| body | 8kHz / 16bit 小端 / 单声道 PCM，边录边发（每块 512 字节） |
+| body | 8kHz / 16bit 小端 / 单声道 PCM，边录边发（每块 1024 字节） |
 | 结束标志 | 松键后 `shutdown(SHUT_WR)`，网关 `read()` 到 EOF 就开始 ASR |
-| 上限 | 30 秒（约 480KB），网关超长截断 |
+| 上限 | 60 秒（约 960KB），网关超长截断 |
 | `X-Sample-Rate` 等 | 描述 PCM 格式；网关目前按 8kHz 处理，以后改 16kHz 需要网关一起支持 |
 
 时序：

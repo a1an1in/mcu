@@ -4,7 +4,7 @@
  * 在 FSMC 映射的那段内存上做一个简单的 first-fit 分配器，
  * 给需要大块缓冲的业务用（比如音频、文件缓存）。
  *
- *   void *p = sram_alloc(64 * 1024);
+ *   void *p = sram_alloc(64 * 1024);   // 必须放外部 SRAM
  *   ...
  *   sram_free(p);
  */

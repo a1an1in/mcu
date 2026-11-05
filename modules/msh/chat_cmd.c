@@ -28,6 +28,7 @@ static const char *chat_err_str(int ret)
     case CHAT_ERR_NOSERVER:   return "还没设置网关，先 chat server <PC_IP> [port]";
     case CHAT_ERR_NET:        return "连不上 PC 网关（IP / 防火墙 / bridge 是否在跑？）";
     case CHAT_ERR_TOOBIG:     return "问题太长，缩短一点再试";
+    case CHAT_ERR_NOMEM:      return "内存不足（请求缓冲区分配失败）";
     default:                return "未知错误";
     }
 }
@@ -49,7 +50,7 @@ static void chat_voice_status(void)
     char ip[24];
     uint16_t port = 0;
 
-    rt_kprintf("语音键: %s\n", chat_chat_voice_key_enabled() ? "on（按住 KEY0 说话）" : "off");
+    rt_kprintf("语音键: %s\n", chat_voice_key_enabled() ? "on（按住 KEY0 说话）" : "off");
     rt_kprintf("状态: %s%s\n",
                chat_voice_is_busy() ? "处理中" : "空闲",
                chat_voice_is_recording() ? "（录音中）" : "");
@@ -73,7 +74,7 @@ static void chat_voice(int argc, char **argv)
     if ((strcmp(action, "on") == 0) || (strcmp(action, "off") == 0))
     {
         chat_voice_key_enable(strcmp(action, "on") == 0);
-        rt_kprintf("KEY0 语音键: %s\n", chat_chat_voice_key_enabled() ? "on" : "off");
+        rt_kprintf("KEY0 语音键: %s\n", chat_voice_key_enabled() ? "on" : "off");
         return;
     }
 

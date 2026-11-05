@@ -18,6 +18,7 @@ add_library(modules OBJECT
     recorder/wav.c
     sensor/sensor.c
     sram/sram_pool.c
+    mem/buf_alloc.c
     chat/chat.c
     chat/chat_text.c
     chat/chat_voice.c
@@ -68,6 +69,7 @@ target_include_directories(modules PUBLIC
     ${CMAKE_SOURCE_DIR}/modules/music
     ${CMAKE_SOURCE_DIR}/modules/sensor
     ${CMAKE_SOURCE_DIR}/modules/sram
+    ${CMAKE_SOURCE_DIR}/modules/mem
     ${CMAKE_SOURCE_DIR}/modules/recorder
     ${CMAKE_SOURCE_DIR}/modules/chat
     ${CMAKE_SOURCE_DIR}/modules/key

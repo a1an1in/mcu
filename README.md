@@ -44,6 +44,7 @@ STM32F103（Cortex-M3）嵌入式工程骨架。
 | [`docs/dependencies-patches.md`](docs/dependencies-patches.md) | 依赖维护与补丁策略 |
 | [`docs/gpio.md`](docs/gpio.md) | GPIO 三后端与测试 |
 | [`docs/drivers.md`](docs/drivers.md) | **驱动分层与目录约定**（器件/芯片/OS 三层、换板/换芯片/换 OS） |
+| [`docs/sd.md`](docs/sd.md) | SD 卡初始化、读块、写块的白话流程 |
 | [`docs/roadmap.md`](docs/roadmap.md) | 当前候选待办 |
 
 ## 一分钟上手
