@@ -3,10 +3,10 @@
 本工程所有构建 / 运维操作统一经 `tools/devops.py`（纯 Python 3 跨平台实现）。
 **构建一律在 Docker 交叉编译镜像内完成，宿主机无需安装任何交叉工具链。**
 
-> **命令前缀（重要）**：本文示例用 `python3`。在 **Windows PowerShell/CMD** 下，`python3`
+> **命令前缀（重要）**：本文示例用 `python`。在 **Windows PowerShell/CMD** 下，`python`
 > 默认是 Microsoft Store 占位符（运行会静默无输出），请改用 `python`（或 `py`）；若想
-> 让 `python3` 也能用，可在 Python 安装目录把 `python.exe` 复制为 `python3.exe`（本机
-> 已这样处理）。Linux / WSL / macOS 保持 `python3`。
+> 让 `python` 也能用，可在 Python 安装目录把 `python.exe` 复制为 `python.exe`（本机
+> 已这样处理）。Linux / WSL / macOS 保持 `python`。
 >
 > **编译 vs 烧录的环境差异**：`build` / `test` 在 Docker 容器内完成，宿主机零工具链；
 > `flash` / `reboot` 在**宿主机**执行（需直接看到调试器 USB），因此宿主机必须安装
@@ -29,12 +29,12 @@ usbipd attach --wsl --busid 1-3
 ## 2. 编译
 
 ```bash
-python3 tools/devops.py build                    # Docker 交叉编译（唯一构建方式）
-python3 tools/devops.py build --gpio-backend rtthread   # 切换 GPIO 后端
-python3 tools/devops.py build --rtos rt-thread          # 指定 RTOS
-python3 tools/devops.py build --board f103              # 指定板子（默认 stm32f103）编译固件
-python3 tools/devops.py build --host                     # 编译固件 + 编译 host 单测程序（仅编译，不运行）
-python3 tools/devops.py build --rtos zephyr
+python tools/devops.py build                    # Docker 交叉编译（唯一构建方式）
+python tools/devops.py build --gpio-backend rtthread   # 切换 GPIO 后端
+python tools/devops.py build --rtos rt-thread          # 指定 RTOS
+python tools/devops.py build --board f103              # 指定板子（默认 stm32f103）编译固件
+python tools/devops.py build --host                     # 编译固件 + 编译 host 单测程序（仅编译，不运行）
+python tools/devops.py build --rtos zephyr
 ```
 
 - 首次自动 `docker build` 生成工具链镜像：Ubuntu 24.04 + cmake + ninja +
@@ -67,10 +67,10 @@ python3 tools/devops.py build --rtos zephyr
 | `DOCKERFILE` | `docker/Dockerfile` | Dockerfile 路径 |
 
 > **单元测试**（与编译共用**同一镜像**，镜像含宿主 gcc 与交叉工具链）分两步：
-> ① 编译 host 单测程序：`python3 tools/devops.py build --host`（或 `--test`，宿主 gcc 把 `tests/`
+> ① 编译 host 单测程序：`python tools/devops.py build --host`（或 `--test`，宿主 gcc 把 `tests/`
 >    下的 `gpio/`（三后端接口一致性）与 `hw/`（模块行为，如「按 KEY1 点亮 DS0」）编成 x86 程序，
 >    产物在 `build/<BOARD>/rt-thread/tests/{gpio,hw}/`，**不运行**）；
-> ② 运行断言：`python3 tools/devops.py test`（只运行已编译好的单测，不重新编译）。
+> ② 运行断言：`python tools/devops.py test`（只运行已编译好的单测，不重新编译）。
 
 ## 3. 烧录（刷包）
 
@@ -86,15 +86,15 @@ python3 tools/devops.py build --rtos zephyr
 
 ```bash
 # ST-Link（默认烧录器）；缺省 --rtos 时烧 rt-thread 固件
-python3 tools/devops.py flash
+python tools/devops.py flash
 # 指定烧哪种固件：--rtos 自动选中对应镜像
-python3 tools/devops.py flash --flasher dap --rtos rt-thread   # 烧 rt-thread
-python3 tools/devops.py flash --flasher dap --rtos zephyr      # 烧 zephyr
+python tools/devops.py flash --flasher dap --rtos rt-thread   # 烧 rt-thread
+python tools/devops.py flash --flasher dap --rtos zephyr      # 烧 zephyr
 # 串口 ISP 烧录（绕开 DAP 复位问题；需 BOOT0=1、接 CH340/UART1）
-python3 tools/devops.py flash --flasher isp --rtos zephyr
+python tools/devops.py flash --flasher isp --rtos zephyr
 # 用 --bin 直接指定任意镜像（优先级高于 --rtos）
-python3 tools/devops.py flash --flasher dap --bin build/stm32f103/zephyr/zephyr/zephyr.bin
-python3 tools/devops.py flash --flasher dap --bin ./tools/atk_f103.bin
+python tools/devops.py flash --flasher dap --bin build/stm32f103/zephyr/zephyr/zephyr.bin
+python tools/devops.py flash --flasher dap --bin ./tools/atk_f103.bin
 ```
 
 - `--rtos <rt-thread|zephyr>` 决定脚本**自动推导的默认 bin**（缺省 rt-thread）：
@@ -122,7 +122,7 @@ python3 tools/devops.py flash --flasher dap --bin ./tools/atk_f103.bin
 
 > **配套：隔空重启看启动横幅（DAP，无需抢按 RESET）**：
 > ```bash
-> python3 tools/devops.py reboot --rtos zephyr     # 或 reboot（默认 rt-thread）
+> python tools/devops.py reboot --rtos zephyr     # 或 reboot（默认 rt-thread）
 > ```
 > 原理：halt 后把 `SP/PC` 设为固件 bin 文件头的启动向量再 `resume`，绕开这颗 DAP 软复位
 > 会进 ROM BootLoader 的问题，等于"隔空按 RESET"。重启后串口重打内核横幅，可借此确认系统
@@ -181,8 +181,8 @@ arm-none-eabi-objdump -h build/stm32f103/stm32f103     # 段布局（核对向�
 
 ## 5.常用测试命令
 ```
-python3 tools/devops.py build --rtos rt-thread    
-python3 tools/devops.py flash --flasher dap --rtos rt-thread  
+python tools/devops.py build --rtos rt-thread    
+python tools/devops.py flash --flasher dap --rtos rt-thread  
 powershell -ExecutionPolicy Bypass -File "C:\Users\a1an1in\workspace\mcu\tools\serial-mon.ps1" -Port COM4
 ```
 
@@ -197,9 +197,9 @@ powershell -ExecutionPolicy Bypass -File "C:\Users\a1an1in\workspace\mcu\tools\s
   `./tools/flash-reset-run-dap.sh`（内部执行 `reset_config srst_only` + `program ... reset run`）。
   未接 RST 线时 `nRESET` 复位前后恒为 1，硬件复位不生效、仍进 ROM——此时只能物理断电。
 
-- **`flash` 找不到 bin**：先 `python3 tools/devops.py build`。
+- **`flash` 找不到 bin**：先 `python tools/devops.py build`。
 - **Docker 权限**：脚本已 `-u $(id -u):$(id -g)`，产物归宿主当前用户。
 - **镜像构建失败/网络**：请确认本机可访问 Docker Hub；构建只在首次进行，之后走缓存。
-- **需要干净重编**：删除对应板目录 `build/<BOARD>/`（如 `build/stm32f103/`）后重新 `python3 tools/devops.py build` 即可全量重建。
+- **需要干净重编**：删除对应板目录 `build/<BOARD>/`（如 `build/stm32f103/`）后重新 `python tools/devops.py build` 即可全量重建。
 - **内核 `rt_sched_*` 隐式声明告警**：RT-Thread 该版本（v5.2.2）已知情况，功能由新调度
   核心提供，不阻断链接；可作为后续清理项。

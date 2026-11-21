@@ -154,7 +154,7 @@ class VoiceEngine:
                  tts_backend="edge", tts_edge_voice="zh-CN-XiaoxiaoNeural",
                  tts_edge_voice_en="en-US-AriaNeural",
                  tts_edge_rate="+5%", asr_vad=True, asr_beam_size=5,
-                 asr_model_en="", dump_dir=""):
+                 asr_model_en="", dump_dir="", asr_initial_prompt=""):
         self.bridge = bridge
         self.asr_model_name = asr_model
         self.asr_model_en = asr_model_en
@@ -168,6 +168,7 @@ class VoiceEngine:
         self.tts_edge_rate = tts_edge_rate
         self.asr_vad = bool(asr_vad)
         self.asr_beam_size = max(1, int(asr_beam_size))
+        self.asr_initial_prompt = (asr_initial_prompt or "").strip()
         self.voice_max_tokens = voice_max_tokens
         self.history_turns = max(0, int(history_turns))
         self.idle_reset = max(0, int(idle_reset))
@@ -289,7 +290,9 @@ class VoiceEngine:
                 language=None if auto else self.asr_language,
                 vad_filter=self.asr_vad,
                 beam_size=self.asr_beam_size,
-                condition_on_previous_text=False)
+                condition_on_previous_text=False,
+                without_timestamps=True,
+                initial_prompt=self.asr_initial_prompt or None)
             text = "".join(s.text for s in segments).strip()
             lang = (getattr(info, "language", None) or
                     ("zh" if not auto else "unknown"))
@@ -306,7 +309,9 @@ class VoiceEngine:
                     language=None if self.asr_model_en.endswith(".en") else "en",
                     vad_filter=self.asr_vad,
                     beam_size=self.asr_beam_size,
-                    condition_on_previous_text=False)
+                    condition_on_previous_text=False,
+                    without_timestamps=True,
+                    initial_prompt=self.asr_initial_prompt or None)
                 text2 = "".join(s.text for s in seg2).strip()
                 if text2:
                     text = text2
@@ -637,6 +642,8 @@ def main():
                     default=int(os.environ.get("ASR_VAD") or cfg.get("asr_vad", 0)))
     ap.add_argument("--asr-beam-size", type=int,
                     default=int(os.environ.get("ASR_BEAM_SIZE") or cfg.get("asr_beam_size", 5)))
+    ap.add_argument("--asr-initial-prompt",
+                    default=os.environ.get("ASR_INITIAL_PROMPT") or cfg.get("asr_initial_prompt", ""))
     ap.add_argument("--tts-voice", default=os.environ.get("TTS_VOICE") or cfg.get("tts_voice", ""))
     ap.add_argument("--tts-rate", type=int, default=int(os.environ.get("TTS_RATE") or cfg.get("tts_rate", 2)))
     ap.add_argument("--tts-backend", choices=["edge", "sapi"],
@@ -689,7 +696,8 @@ def main():
                             args.tts_edge_rate,
                             args.asr_vad != 0, args.asr_beam_size,
                             asr_model_en=args.asr_model_en,
-                            dump_dir=args.dump_voice)
+                            dump_dir=args.dump_voice,
+                            asr_initial_prompt=args.asr_initial_prompt)
         print("[voice] 预加载 ASR 模型 %s（首次会下载，请稍等）..." % args.asr_model)
         try:
             voice.preload()

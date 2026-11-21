@@ -57,6 +57,8 @@ TTS 默认用 **edge-tts**（微软 Edge 的神经网络语音，很自然），
 |---|---|---|
 | `ASR_MODEL` | `base` | `tiny` 更快但中文差；`small` 更准但慢 |
 | `ASR_LANGUAGE` | `zh` | 识别语言 |
+| `ASR_BEAM_SIZE` | `5` | 波束搜索大小；`1` 更快，`5` 更稳 |
+| `ASR_INITIAL_PROMPT` | 空 | 领域提示词，可明显改善 DMA/GPIO/U-Boot 等术语 |
 | `TTS_BACKEND` | `edge` | `edge`（自然，需联网）或 `sapi`（离线） |
 | `TTS_EDGE_VOICE` | `zh-CN-XiaoxiaoNeural` | 见下方可选音色 |
 | `TTS_EDGE_RATE` | `+5%` | edge 语速，如 `+10%` / `-5%` |
